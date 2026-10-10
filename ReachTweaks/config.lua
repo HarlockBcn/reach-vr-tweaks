@@ -58,14 +58,14 @@ return {
     },
 
     -- --------------------------------------------------------
-    -- 3) BOW BODY WHILE DRAWING
-    -- While the string is held, the game averages the bow hand and
-    -- the string hand, so the bow body follows the bow hand slowly.
-    -- This pulls the bow grip back to the bow hand. Only the bow
-    -- position is corrected: the string and the aim are untouched.
+    -- 3) BOW BODY WHILE DRAWING (experimental, parked)
+    -- Tries to pull the bow grip back to the bow hand while the
+    -- string is held. It has no visible effect yet (the game
+    -- overwrites it), so it is disabled. With Debug = true it
+    -- still logs bow lag measurements when enabled.
     -- --------------------------------------------------------
     BowBody = {
-        Enabled = true,
+        Enabled = false,
         BodyFollow = 0.0,   -- 0 = original game, 1 = grip locked to the hand
         BlendMs = 150,      -- fade in/out time when grabbing/releasing the string
     },

@@ -5,8 +5,7 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 1. **Agile hands** – removes the sluggish "weight" of held weapons. The game ties a held weapon to the hand with a damped spring (`UAtlasThrowableResolver::ApplyWeight`); the mod makes that spring stiffer and critically damped while the weapon is held (×10 by default).
 2. **Bow haptics** – vibration that grows while drawing, tension "clicks" at 25/50/75 %, a buzz at full draw and a kick on release.
 3. **Firearm haptics** – a sharp kick with a fading tail on every shot, also on the supporting hand, plus scaling of the game's own weapon vibrations.
-4. **Lighter bow body while drawing** – while the string is held the game averages the bow-hand and string-hand motions, so the bow body follows the bow hand slowly. The mod pulls the bow grip back towards the bow hand (position only; the string and the aim are left to the game).
-5. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
+4. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 
 ## Install & play
 
@@ -35,8 +34,7 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`.
 | `Hands.WeightDamping` | 1.0 = no wobble (critical damping) |
 | `Hands.Scope` | `"weapons"` (guns and bow) or `"all"` (any throwable) |
 | `Bow.*` | Draw / click / full-draw / release vibration amplitudes |
-| `BowBody.BodyFollow` | 0 = original, 1 = bow grip locked to the hand while drawing |
-| `BowBody.BlendMs` | Fade time of the correction when grabbing/releasing the string |
+| `BowBody.*` | Experimental, disabled (see Known issues) |
 | `Guns.FireAmplitude`, `FireDurationMs` | Shot kick and recoil duration |
 | `Guns.NativeHapticScale` | Multiplies the game's own weapon vibrations |
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
@@ -52,7 +50,7 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/main.lua        entry point, main loop, F7 toggle
   Scripts/hands.lua       weight-spring patch (agile hands)
   Scripts/bow.lua         bow haptics
-  Scripts/bowbody.lua     bow body follow while drawing
+  Scripts/bowbody.lua     bow body follow while drawing (experimental, disabled)
   Scripts/guns.lua        firearm haptics
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
@@ -80,7 +78,7 @@ Key findings:
 
 ## Known issues / TODO
 
-- **Bow body while drawing (in progress, `bowbody.lua`).** With only the grip held the bow follows the hand well; while the string is held the bow *body* follows the bow hand slowly. Constraint: do **not** change how the string behaves (do not touch `BowStringCouplerRef` weights).
+- **Bow body while drawing (PARKED 2026-10-10, `bowbody.lua`, `BowBody.Enabled = false`).** With only the grip held the bow follows the hand well; while the string is held the bow *body* follows the bow hand slowly. Constraint: do **not** change how the string behaves (do not touch `BowStringCouplerRef` weights).
   - Cause: `UNDNTResolverBasic::CalculateMotionInternal` (rva 0x46c6ca0) builds one motion per active coupler (weight = motion[+4] * motion[+8]) and `CombineMotionsWithMagnets` (rva 0x46cb280) blends them: per-motion weight = `pow(w / max(maxW, 1e-4), MagneticExponent@0xbc8)`; positions are a weighted average, rotations an incremental slerp. On the bow `MagneticExponent = 0` and both weights are equal, so grip and string motions weigh the same. `MagneticExponent` only helps if the weights differ, which requires changing the string coupler (rejected). `MagneticClippingCoefficient@0xbc4` is not read by these functions.
   - Dead end: `AAtlasBow::TickSmoothNock` and `SmoothAttach*` only ease the **arrow** onto the nock (`TEase` + `SetActorTransform` on the arrow owned by `SmoothAttachCouplerRef`, then `BP_OnArrowNocked`). `OnBowGrabbed` / `OnBowStringGrabbed` only fire BP events.
   - `bowbody.lua` (first attempt): learns the grip offset in controller space and, while drawing, adds `BodyFollow` × error as a world offset to the bow. It has no visible effect: the game overwrites it every frame (our Lua tick runs before the resolvers), so `BodyFollow = 0` by default. Kept for its `[bowbody]` measurements.
