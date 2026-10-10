@@ -55,24 +55,53 @@ local function compAxes(c)
     return nil
 end
 
-local function partners(coupler)
-    if not coupler then return {} end
-    local ok, arr = pcall(function() return coupler:GetPartners() end)
-    if ok then return Util.ArrayToTable(arr) end
-    return {}
-end
-
-local function stringHeld(bow)
-    return #partners(Util.Prop(bow, "BowStringCouplerRef")) > 0
-end
-
--- Hand holding the grip (while drawing both hands hold the bow)
-local function gripHand(bow)
-    for _, p in ipairs(partners(Util.Prop(bow, "BowCouplerRef"))) do
-        local h = Player.HandOfCoupler(p)
-        if h ~= nil then return h end
+-- Logs once why the module is idle (avoids silent failures)
+local lastWhy = nil
+local function idle(why)
+    if why ~= lastWhy then
+        lastWhy = why
+        Util.DLog("BowBody: idle (%s)", why)
     end
-    return nil
+end
+
+-- Which hand holds the grip and whether a hand holds the string, from the
+-- partners of the player's hand couplers. Falls back to the hand that held
+-- the bow alone when the coupler cannot be matched.
+local lastGripHand = nil
+local lastState = nil
+local function bowHands(bow)
+    local gk = Util.Key(Util.Prop(bow, "BowCouplerRef") or bow)
+    local sk = Util.Key(Util.Prop(bow, "BowStringCouplerRef") or bow)
+    local bk = Util.Key(bow)
+    local grip, drawing, holding = nil, false, {}
+    for hand = 0, 1 do
+        for _, p in ipairs(Player.HandPartners(hand)) do
+            local k = Util.Key(p)
+            if k == gk then grip = hand end
+            if k == sk then drawing = true end
+            local o = Util.GetOwner(p)
+            if o and Util.Key(o) == bk and holding[#holding] ~= hand then holding[#holding + 1] = hand end
+        end
+    end
+    local how = grip ~= nil and "grip coupler" or "fallback"
+    if grip == nil then
+        if #holding == 1 then
+            grip = holding[1]
+        elseif #holding >= 2 then
+            grip = lastGripHand
+            drawing = true
+        end
+    elseif #holding >= 2 then
+        drawing = true
+    end
+    if #holding == 1 then lastGripHand = grip end
+    local state = string.format("grip hand %s (%s), hands on bow %d, drawing %s",
+        tostring(grip), how, #holding, tostring(drawing))
+    if state ~= lastState then
+        lastState = state
+        Util.DLog("BowBody: %s", state)
+    end
+    return grip, drawing
 end
 
 local function newStats()
@@ -115,11 +144,13 @@ end
 -- applying = false measures only (tweaks disabled with F7)
 function BowBody.Tick(dtMs, applying)
     local _, bow = Player.HandHoldingClass({ BOW_CLASS })
-    local hand = bow and gripHand(bow)
-    if hand == nil then
+    if not bow then
         if bowKey then reset() end
+        lastGripHand = nil
         return
     end
+    local hand, drawing = bowHands(bow)
+    if hand == nil then return idle("grip hand unknown") end
     local key = Util.Key(bow)
     if key ~= bowKey then
         reset()
@@ -129,10 +160,11 @@ function BowBody.Tick(dtMs, applying)
 
     local mc = Player.MotionController(hand)
     local grip = Util.Prop(bow, "BowCouplerRef")
-    if not mc or not grip then return end
+    if not mc then return idle("no motion controller") end
+    if not grip then return idle("no BowCouplerRef") end
     local cLoc, gLoc = compLoc(mc), compLoc(grip)
     local x, y, z = compAxes(mc)
-    if not cLoc or not gLoc or not x then return end
+    if not cLoc or not gLoc or not x then return idle("no controller/grip transform") end
 
     local speed = 0
     if prevCtrl then
@@ -141,7 +173,6 @@ function BowBody.Tick(dtMs, applying)
     prevCtrl = cLoc
 
     local rel = { gLoc[1] - cLoc[1], gLoc[2] - cLoc[2], gLoc[3] - cLoc[3] }
-    local drawing = stringHeld(bow)
 
     if not drawing then
         -- Learn the grip offset while the bow is held still with one hand
@@ -161,7 +192,8 @@ function BowBody.Tick(dtMs, applying)
     local step = dtMs / math.max(cfg.BlendMs, 1)
     if blend < target then blend = math.min(target, blend + step) else blend = math.max(target, blend - step) end
 
-    if restOffset == nil then return end
+    if restOffset == nil then return idle("grip offset not learned yet: hold the bow still") end
+    lastWhy = nil
     local want = toWorld(restOffset, x, y, z)
     local err = { want[1] - rel[1], want[2] - rel[2], want[3] - rel[3] }
     local errLen = len(err)

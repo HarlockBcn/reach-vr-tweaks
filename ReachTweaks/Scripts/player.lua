@@ -52,9 +52,10 @@ local function handCoupler(hand)
 end
 
 -- Returns the root actor the hand is coupled to (or nil).
-local function queryHeld(hand)
+-- Components the hand coupler is coupled to (e.g. a bow grip or string coupler).
+function Player.HandPartners(hand)
     local coupler = handCoupler(hand)
-    if not coupler then return nil end
+    if not coupler then return {} end
     local partners = {}
     local ok, arr = pcall(function() return coupler:GetPartners() end)
     if ok then partners = Util.ArrayToTable(arr) end
@@ -62,7 +63,11 @@ local function queryHeld(hand)
         local ok2, arr2 = pcall(function() return coupler.CurrentPartners end)
         if ok2 then partners = Util.ArrayToTable(arr2) end
     end
-    for _, partner in ipairs(partners) do
+    return partners
+end
+
+local function queryHeld(hand)
+    for _, partner in ipairs(Player.HandPartners(hand)) do
         local owner = Util.GetOwner(partner)
         if owner then return owner end
     end
