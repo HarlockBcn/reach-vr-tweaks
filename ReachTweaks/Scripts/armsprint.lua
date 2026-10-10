@@ -1,0 +1,241 @@
+-- Arm-swing sprint: swinging both arms like a runner (while moving with the
+-- stick) starts the game's sprint, as clicking the stick does; when the arms
+-- stop swinging the player walks again.
+--
+-- Gesture: each hand's position relative to the head (so walking, turning
+-- the body or teleports do not count) is reduced to one "swing" coordinate,
+-- height + distance in front of the head (a running arm moves forward-up and
+-- back-down). Its velocity is smoothed and compared between the hands over a
+-- short window: both hands must swing fast enough (RMS speed) and in
+-- opposite directions (negative correlation). Moving both hands together
+-- (aiming, climbing, looking around) does not count.
+--
+-- Sprint: StartSprint / StopSprint on the movement component, the same
+-- functions the sprint input uses (Speed = RunSpeed / WalkSpeed, sprint lines,
+-- OnSprintStarted / OnSprintEnded). Only a sprint started here is ended
+-- here: a sprint started with the stick is left to the game.
+-- Slide (slide.lua): while it holds the sprint state (slide, crouch lock)
+-- nothing is started or stopped here. Ending the gesture is delayed by
+-- StopMs, so ducking right after swinging still counts as sprinting.
+local Util = require("util")
+local Player = require("player")
+local Haptics = require("haptics")
+local Slide = require("slide")
+
+local ArmSprint = {}
+
+local cfg
+
+local MAX_STEP_CM = 50           -- a bigger jump in one tick is a tracking glitch
+
+local lastKey = nil
+local lastS = { [0] = nil, [1] = nil }   -- last swing coordinate per hand (cm)
+local vel = { [0] = 0, [1] = 0 }          -- smoothed swing velocity (cm/s)
+local eLL, eRR, eLR = 0, 0, 0             -- windowed velocity products
+local gesture = false
+local onMs, offMs = 0, 0
+local ours = false               -- the current sprint was started here
+local retryMs = 0                -- wait before starting again after the game ended our sprint
+local logAcc = 0
+local warned = {}
+
+local function movement(pawn)
+    return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
+end
+
+local function readBool(obj, name)
+    local ok, v = pcall(function() return obj[name] end)
+    return ok and v == true
+end
+
+local function call(obj, fn, ...)
+    local args = { ... }
+    local ok, v = pcall(function() return obj[fn](obj, table.unpack(args)) end)
+    if ok then return v end
+    return nil
+end
+
+local function warnOnce(key, fmt, ...)
+    if warned[key] then return end
+    warned[key] = true
+    Util.Log(fmt, ...)
+end
+
+local function location(comp)
+    if not comp then return nil end
+    local ok, loc = pcall(function() return comp:K2_GetComponentLocation() end)
+    if ok and loc then return { X = loc.X, Y = loc.Y, Z = loc.Z } end
+    return nil
+end
+
+local function headComponent(pawn, mc)
+    return Util.Prop(mc, "Headset") or Util.Prop(pawn, "HeadReference") or Util.Prop(pawn, "HeadComponent")
+end
+
+local function handComponent(mc, hand)
+    local c = Util.Prop(mc, hand == Haptics.LEFT and "LeftMotionController" or "RightMotionController")
+    if c then return c end
+    warnOnce("hand", "[armsprint] movement component has no motion controllers; searching them by class")
+    return Player.MotionController(hand)
+end
+
+-- Horizontal forward of the head (unit vector).
+local function headForward(head)
+    local ok, f = pcall(function() return head:GetForwardVector() end)
+    if not ok or not f then return 1, 0 end
+    local len = math.sqrt(f.X * f.X + f.Y * f.Y)
+    if len < 0.1 then return 1, 0 end
+    return f.X / len, f.Y / len
+end
+
+-- Stick deflection (0..1); nil when the game does not report it.
+local function stickInput(mc)
+    local f, r = call(mc, "GetForwardInput"), call(mc, "GetRightInput")
+    if type(f) ~= "number" or type(r) ~= "number" then return nil end
+    return math.sqrt(f * f + r * r)
+end
+
+local function reset()
+    lastS[0], lastS[1] = nil, nil
+    vel[0], vel[1] = 0, 0
+    eLL, eRR, eLR = 0, 0, 0
+    gesture, onMs, offMs = false, 0, 0
+end
+
+-- Updates the gesture statistics; returns true while the hands swing like a runner.
+local function measure(pawn, mc, dt)
+    local head = headComponent(pawn, mc)
+    local hp = location(head)
+    if not hp then
+        warnOnce("head", "[armsprint] head component not found")
+        return false
+    end
+    local fx, fy = headForward(head)
+    local smooth = Util.Clamp(dt / (cfg.SmoothMs / 1000), 0, 1)
+    for hand = 0, 1 do
+        local p = location(handComponent(mc, hand))
+        if not p then
+            lastS[hand], vel[hand] = nil, 0
+        else
+            local dx, dy, dz = p.X - hp.X, p.Y - hp.Y, p.Z - hp.Z
+            local s = dz + dx * fx + dy * fy
+            local v = 0
+            if lastS[hand] and dt > 0 and math.abs(s - lastS[hand]) < MAX_STEP_CM then
+                v = (s - lastS[hand]) / dt
+            end
+            lastS[hand] = s
+            vel[hand] = vel[hand] + (v - vel[hand]) * smooth
+        end
+    end
+    local a = Util.Clamp(dt / (cfg.WindowMs / 1000), 0, 1)
+    local vl, vr = vel[Haptics.LEFT], vel[Haptics.RIGHT]
+    eLL = eLL + (vl * vl - eLL) * a
+    eRR = eRR + (vr * vr - eRR) * a
+    eLR = eLR + (vl * vr - eLR) * a
+    local rmsL, rmsR = math.sqrt(eLL), math.sqrt(eRR)
+    local corr = (eLL > 1 and eRR > 1) and eLR / math.sqrt(eLL * eRR) or 0
+    return rmsL >= cfg.MinHandSpeed and rmsR >= cfg.MinHandSpeed and corr <= cfg.MaxCorrelation, rmsL, rmsR, corr
+end
+
+local function start(mc)
+    call(mc, "StartSprint")
+    ours = readBool(mc, "bIsSprinting")
+    if ours and cfg.HapticAmplitude > 0 then
+        Haptics.Pulse(Haptics.LEFT, cfg.HapticAmplitude, 60, 0, 0.5)
+        Haptics.Pulse(Haptics.RIGHT, cfg.HapticAmplitude, 60, 0, 0.5)
+    end
+    Util.DLog("[armsprint] sprint start%s", ours and "" or " FAILED")
+end
+
+local function stop(mc, reason)
+    if ours and readBool(mc, "bIsSprinting") then call(mc, "StopSprint") end
+    ours = false
+    Util.DLog("[armsprint] sprint end (%s)", reason)
+end
+
+function ArmSprint.Tick(dtMs)
+    local pawn = Player.GetPawn()
+    local mc = pawn and movement(pawn)
+    if not mc then
+        ours, lastKey = false, nil
+        reset()
+        return
+    end
+    local key = Util.Key(pawn)
+    if key ~= lastKey then
+        -- New pawn (level change, respawn)
+        lastKey, ours = key, false
+        reset()
+    end
+
+    local dt = dtMs / 1000
+    local swinging, rmsL, rmsR, corr = measure(pawn, mc, dt)
+    if swinging then onMs, offMs = onMs + dtMs, 0 else onMs, offMs = 0, offMs + dtMs end
+    if not gesture and onMs >= cfg.StartMs then
+        gesture = true
+        Util.DLog("[armsprint] gesture on (L=%.0f R=%.0f cm/s, corr=%.2f)", rmsL or 0, rmsR or 0, corr or 0)
+    elseif gesture and offMs >= cfg.StopMs then
+        gesture = false
+        Util.DLog("[armsprint] gesture off")
+    end
+    if retryMs > 0 then retryMs = retryMs - dtMs end
+
+    local stick = stickInput(mc)
+    if stick == nil then warnOnce("stick", "[armsprint] stick input not readable; the stick is not required") end
+    local moving = stick == nil or stick >= cfg.MinStick
+    local sprinting = readBool(mc, "bIsSprinting")
+
+    if Util.Debug then
+        logAcc = logAcc + dtMs
+        if logAcc >= 1000 and (gesture or ours or (rmsL or 0) > cfg.MinHandSpeed * 0.5) then
+            logAcc = 0
+            Util.DLog("[armsprint] L=%.0f R=%.0f cm/s corr=%.2f gesture=%s stick=%s sprint=%s ours=%s slide=%s",
+                rmsL or 0, rmsR or 0, corr or 0, tostring(gesture), stick and string.format("%.2f", stick) or "?",
+                tostring(sprinting), tostring(ours), tostring(Slide.HoldsSprint()))
+        end
+    end
+
+    if Slide.HoldsSprint() then
+        -- The slide owns the sprint state now; it ends it itself
+        if ours then Util.DLog("[armsprint] sprint handed to the slide") end
+        ours = false
+        return
+    end
+    if ours and not sprinting then
+        -- Ended by the game (stick released, sprint input, ...)
+        ours = false
+        retryMs = cfg.RetryMs
+        Util.DLog("[armsprint] sprint ended by the game")
+    end
+    if gesture and moving then
+        if not sprinting and retryMs <= 0 then start(mc) end
+    elseif ours then
+        stop(mc, gesture and "stick released" or "arms stopped")
+    end
+end
+
+-- Tweaks turned off (F7): end our sprint and start clean.
+function ArmSprint.Stop()
+    local pawn = Player.GetPawn()
+    local mc = pawn and movement(pawn)
+    if mc and ours and not Slide.HoldsSprint() then stop(mc, "disabled") end
+    ours = false
+    reset()
+end
+
+function ArmSprint.Init(config)
+    cfg = config
+    cfg.MinHandSpeed = cfg.MinHandSpeed or 80
+    cfg.MaxCorrelation = cfg.MaxCorrelation or -0.3
+    cfg.StartMs = cfg.StartMs or 200
+    cfg.StopMs = cfg.StopMs or 500
+    cfg.MinStick = cfg.MinStick or 0.3
+    cfg.WindowMs = cfg.WindowMs or 400
+    cfg.SmoothMs = cfg.SmoothMs or 40
+    cfg.RetryMs = cfg.RetryMs or 500
+    cfg.HapticAmplitude = cfg.HapticAmplitude or 0.15
+    Util.Log("Arm-swing sprint enabled (min hand speed=%.0f cm/s, correlation <= %.2f, start %d ms, stop %d ms)",
+        cfg.MinHandSpeed, cfg.MaxCorrelation, cfg.StartMs, cfg.StopMs)
+end
+
+return ArmSprint

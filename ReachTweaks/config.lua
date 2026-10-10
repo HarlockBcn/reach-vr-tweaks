@@ -114,4 +114,23 @@ return {
         CooldownMs = 600,        -- minimum time between slides
         ThrusterStepMs = 30,     -- internal: length of each movement push
     },
+
+    -- --------------------------------------------------------
+    -- 6) ARM-SWING SPRINT
+    -- Swing both arms like a runner while moving with the stick to
+    -- sprint (clicking the stick still works). Stop swinging to walk
+    -- again. Crouching right after swinging still slides.
+    -- --------------------------------------------------------
+    ArmSprint = {
+        Enabled = true,
+        MinHandSpeed = 80,       -- how fast each hand must swing (cm/s, average)
+        MaxCorrelation = -0.3,   -- hands must move in opposite directions (-1 = perfectly opposite)
+        StartMs = 200,           -- swing this long to start sprinting
+        StopMs = 500,            -- stop swinging this long to walk again
+        MinStick = 0.3,          -- stick deflection needed (0..1); no sprint while standing still
+        HapticAmplitude = 0.15,  -- short tap when the sprint starts (0 = off)
+        WindowMs = 400,          -- internal: time window for the swing measurement
+        SmoothMs = 40,           -- internal: hand velocity smoothing
+        RetryMs = 500,           -- internal: wait before restarting a sprint the game ended
+    },
 }

@@ -6,7 +6,8 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 2. **Bow haptics** – vibration that grows while drawing, tension "clicks" at 25/50/75 %, a buzz at full draw and a kick on release.
 3. **Firearm haptics** – a sharp kick with a fading tail on every shot, also on the supporting hand, plus scaling of the game's own weapon vibrations.
 4. **Sprint slide** – crouching (ducking your head or pressing the crouch button, "B" by default) while sprinting slides you a few metres in the direction you were running, at the game's crouch height; the sprint speed lines stay on. Afterwards you stand up again (a button slide stays crouched if the button is still held). Sprinting is not possible while crouched. Crouching while walking is unchanged.
-5. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
+5. **Arm-swing sprint** – swinging both arms like a runner while moving with the stick starts the sprint (clicking the stick still works); stop swinging and you walk again. Ducking right after swinging still slides.
+6. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 
 ## Install & play
 
@@ -44,6 +45,8 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`. While pl
 | `Slide.DurationMs`, `EndSpeedFactor` | Slide time and final speed (share of the start speed) |
 | `Slide.CrouchDownMs` | Time to get fully crouched when a slide starts (the game takes ~870 ms; 0 = game speed) |
 | `Slide.KeepSprintLines`, `NoSprintWhileCrouched`, `HapticAmplitude` | Speed lines while sliding, sprint lock while crouched, slide rumble |
+| `ArmSprint.MinHandSpeed`, `MaxCorrelation` | How fast each hand must swing (cm/s) and how opposite the hands must move (-1 = perfectly opposite) |
+| `ArmSprint.StartMs`, `StopMs`, `MinStick` | Swing time to start, still time to walk again, stick deflection needed |
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
 | `Debug` | Writes details to `ue4ss\Mods\ReachTweaks\ReachTweaks.log` |
 
@@ -60,6 +63,7 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/bowbody.lua     bow body follow while drawing (experimental, disabled)
   Scripts/guns.lua        firearm haptics
   Scripts/slide.lua       sprint slide
+  Scripts/armsprint.lua   arm-swing sprint
   Scripts/keys.lua        keyboard shortcuts (polled on the game thread)
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
@@ -86,6 +90,9 @@ Key findings:
 - Crouch: physical (head height) or the crouch button, input action `/Game/AtlasProto/Blueprints/Input/Actions/Movement/IA_Crouch` ("B"), handled only in Blueprint by `InpActEvt_IA_Crouch_K2Node_EnhancedInputActionEvent_0`, one event per press (`UEnhancedInputLibrary::GetBoundActionValue` cannot poll it: it only works for value bindings). It toggles `StartButtonCrouch`/`StopButtonCrouch` (`bButtonCrouch`, `bWantsToCrouch`, `bIsCrouching`). Crouching eases `Crouch Height` from ~90 down to `ButtonCrouchHeight` (50) in ~870 ms, which lowers the whole actor. `StopButtonCrouch` alone leaves `bWantsToCrouch` set; `TryUncrouch` → `UnCrouch` gives the real height back. The "On Sprint Started" handler calls `TryUncrouch`, so a sprint stands the player up.
 - Thrusters: `AddLinearThruster(FAtlasMovementThrusterLinear)` gives `Direction * Strength` (× `StrengthOverTime` curve over `Duration` if set); non-additive thrusters replace the movement velocity (summed if several), additive ones add to it; expired ones are removed after each movement update; `HasActiveOverrideThrusters` tells whether one is running.
 - Sprint slide (`slide.lua`): chains short non-additive thrusters (only when none is active); keeps the lines by writing `bIsSprinting` directly (no `OnSprintStarted`, which would uncrouch); a head slide calls `StartButtonCrouch`, then `StopButtonCrouch` + `TryUncrouch` (+ `UnCrouch`) at the end; drives `Crouch Height` down faster; the crouch lock holds `bIsSprinting` on with walk `Speed` so the sprint input cannot start a sprint. The standing head height is learnt from the measured head height (the game's calibration offset did not match it after a level change); moves over 3 m in one tick are treated as teleports.
+- Sprint input: native `OnSprintInput` (bound to `SprintInput`): a non-zero value calls the `StartSprint` logic; a zero value calls `StopSprint` only when `bToggleSprint` (+0x314) is false. `UAtlasMovementComponent` has `LeftMotionController`, `RightMotionController` and `Headset` object properties, and `GetForwardInput` / `GetRightInput` return the stick axes.
+- Arm-swing sprint (`armsprint.lua`): per hand, swing = height + forward distance relative to the head; smoothed velocities, windowed RMS per hand and left/right correlation (running = both fast and negatively correlated). Calls `StartSprint` / `StopSprint`, ends only sprints it started, and does nothing while `Slide.HoldsSprint()` (slide or crouch lock).
+  Measured in VR (2026-10-10): running arm swing ~220–320 cm/s per hand with correlation -0.65 to -0.9; ordinary hand movement stays below ~100 cm/s or near 0 / positive correlation, so the defaults (80 cm/s, -0.3, start 200 ms) leave a wide margin. Ducking into a slide flips the correlation positive, and the sprint is handed to the slide (`sprint handed to the slide` in the log) before the gesture ends.
 - Dead ends (no effect, the resolvers run with `MovementMethod = NoPhysics`): `ObjectPosition/RotationHeaviness`, `MagicNumber_*`, `ResolverLinear/AngularStiffness`, recoil springs, `ND.HandGrab.*` lerp settings.
 - UE4SS quirks: `K2_GetComponentsByClass` fails (use `FindAllOf` + owner); `FindAllOf` is exact-class only; pawn hand properties are `NDComponentPath` structs (use the `...Reference` properties); never keep UObjects across ticks; never run Lua off the game thread: `RegisterKeyBind` and `ExecuteWithDelay` callbacks run on UE4SS threads and crashed the game inside UE4SS (keys are polled with `IsInputKeyDown`, delays use `Util.After`).
 

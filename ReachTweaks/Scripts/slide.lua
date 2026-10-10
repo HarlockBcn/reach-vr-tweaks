@@ -492,6 +492,12 @@ function Slide.Tick(dtMs)
     holdSprint(mc, locked, true)
 end
 
+-- True while the slide owns the sprint state (sliding, or bIsSprinting held
+-- for the sprint lines / crouch lock): nobody else may start or stop a sprint.
+function Slide.HoldsSprint()
+    return sliding or sprintHeld
+end
+
 -- Tweaks turned off (F7): give everything back to the game and start clean
 -- when they are turned on again.
 function Slide.Stop()
