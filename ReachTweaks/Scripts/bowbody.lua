@@ -105,7 +105,29 @@ local function bowHands(bow)
 end
 
 local function newStats()
-    return { [false] = { n = 0, sum = 0, max = 0 }, [true] = { n = 0, sum = 0, max = 0, post = 0 }, vmax = 0 }
+    local function one() return { n = 0, sum = 0, max = 0, post = 0, cPos = 0, bPos = 0, cRot = 0, bRot = 0 } end
+    return { [false] = one(), [true] = one(), vmax = 0 }
+end
+
+-- Rotation angle (degrees) between two frames given by their axes
+local function frameAngle(a, b)
+    local tr = dot(a[1], b[1]) + dot(a[2], b[2]) + dot(a[3], b[3])
+    return math.deg(math.acos(Util.Clamp((tr - 1) / 2, -1, 1)))
+end
+
+-- How much the bow moves compared to the controller over the same frames:
+-- 100 % = the bow follows the hand fully, 50 % = it covers half the motion.
+local prevFrame = nil
+local function recordMotion(drawing, cLoc, cAxes, gLoc, bAxes)
+    local p = prevFrame
+    prevFrame = { cLoc = cLoc, cAxes = cAxes, gLoc = gLoc, bAxes = bAxes }
+    if not p then return end
+    stats = stats or newStats()
+    local s = stats[drawing]
+    s.cPos = s.cPos + len({ cLoc[1] - p.cLoc[1], cLoc[2] - p.cLoc[2], cLoc[3] - p.cLoc[3] })
+    s.bPos = s.bPos + len({ gLoc[1] - p.gLoc[1], gLoc[2] - p.gLoc[2], gLoc[3] - p.gLoc[3] })
+    s.cRot = s.cRot + frameAngle(p.cAxes, cAxes)
+    s.bRot = s.bRot + frameAngle(p.bAxes, bAxes)
 end
 
 local function record(drawing, err, post, speed)
@@ -124,21 +146,28 @@ local function flushStats(dtMs, applying)
     statAcc = 0
     local st = stats
     stats = nil
-    -- only with noticeable movement (> 80 cm/s)
-    if not st or st.vmax < 80 then return end
+    -- only with noticeable movement (> 80 cm/s or > 20 degrees turned)
+    if not st or (st.vmax < 80 and st[false].cRot + st[true].cRot < 20) then return end
     local f, d = st[false], st[true]
     local parts = {}
-    if f.n > 0 then parts[#parts + 1] = string.format("grip-only err avg %.1f max %.1f", f.sum / f.n, f.max) end
+    local function follow(s)
+        local pos = s.cPos > 1 and string.format("%3.0f%%", 100 * s.bPos / s.cPos) or "  -"
+        local rot = s.cRot > 3 and string.format("%3.0f%%", 100 * s.bRot / s.cRot) or "  -"
+        return string.format("follow pos %s (%.0f cm) rot %s (%.0f deg)", pos, s.cPos, rot, s.cRot)
+    end
+    if f.n > 0 then
+        parts[#parts + 1] = string.format("grip-only err avg %.1f max %.1f %s", f.sum / f.n, f.max, follow(f))
+    end
     if d.n > 0 then
-        parts[#parts + 1] = string.format("DRAWING err avg %.1f max %.1f -> shown avg %.1f",
-            d.sum / d.n, d.max, d.post / d.n)
+        parts[#parts + 1] = string.format("DRAWING err avg %.1f max %.1f -> shown avg %.1f %s",
+            d.sum / d.n, d.max, d.post / d.n, follow(d))
     end
     Util.Log("[bowbody] vmax=%4.0f cm/s %s (follow=%.2f %s)", st.vmax, table.concat(parts, " | "),
         cfg.BodyFollow, applying and "ON" or "OFF")
 end
 
 local function reset()
-    bowKey, restOffset, heldMs, blend, prevCtrl = nil, nil, 0, 0, nil
+    bowKey, restOffset, heldMs, blend, prevCtrl, prevFrame = nil, nil, 0, 0, nil, nil
 end
 
 -- applying = false measures only (tweaks disabled with F7)
@@ -212,6 +241,10 @@ function BowBody.Tick(dtMs, applying)
     end
 
     if Util.Debug then
+        local okb, bx, by, bz = pcall(function()
+            return vec(bow:GetActorForwardVector()), vec(bow:GetActorRightVector()), vec(bow:GetActorUpVector())
+        end)
+        if okb and bx then recordMotion(drawing, cLoc, { x, y, z }, gLoc, { bx, by, bz }) end
         record(drawing, errLen, errLen * (1 - k), speed)
         flushStats(dtMs, applying)
     end

@@ -66,7 +66,7 @@ return {
     -- --------------------------------------------------------
     BowBody = {
         Enabled = true,
-        BodyFollow = 0.8,   -- 0 = original game, 1 = grip locked to the hand
+        BodyFollow = 0.0,   -- 0 = original game, 1 = grip locked to the hand
         BlendMs = 150,      -- fade in/out time when grabbing/releasing the string
     },
 
