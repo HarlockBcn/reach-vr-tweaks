@@ -20,20 +20,11 @@ local restOffset = nil      -- grip position in controller space (cm)
 local heldMs = 0
 local blend = 0             -- 0..1, fades the correction in/out
 local prevCtrl = nil
+local firstApplied = false
 
 -- Debug statistics (one summary per second)
 local stats = nil
 local statAcc = 0
-
--- Axes of a UE rotator (FRotationMatrix)
-local function axes(r)
-    local p, y, ro = math.rad(r.Pitch), math.rad(r.Yaw), math.rad(r.Roll)
-    local sp, cp, sy, cy, sr, cr = math.sin(p), math.cos(p), math.sin(y), math.cos(y), math.sin(ro), math.cos(ro)
-    local x = { cp * cy, cp * sy, sp }
-    local yv = { sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp }
-    local z = { -(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp }
-    return x, yv, z
-end
 
 local function dot(v, a) return v[1] * a[1] + v[2] * a[2] + v[3] * a[3] end
 
@@ -55,18 +46,33 @@ local function compLoc(c)
     return nil
 end
 
-local function compRot(c)
-    local ok, v = pcall(function() return c:K2_GetComponentRotation() end)
-    if ok and v then return { Pitch = v.Pitch, Yaw = v.Yaw, Roll = v.Roll } end
+-- World axes of a scene component (forward = X, right = Y, up = Z)
+local function compAxes(c)
+    local ok, x, y, z = pcall(function()
+        return vec(c:GetForwardVector()), vec(c:GetRightVector()), vec(c:GetUpVector())
+    end)
+    if ok and x and y and z then return x, y, z end
     return nil
 end
 
+local function partners(coupler)
+    if not coupler then return {} end
+    local ok, arr = pcall(function() return coupler:GetPartners() end)
+    if ok then return Util.ArrayToTable(arr) end
+    return {}
+end
+
 local function stringHeld(bow)
-    local c = Util.Prop(bow, "BowStringCouplerRef")
-    if not c then return false end
-    local ok, arr = pcall(function() return c:GetPartners() end)
-    if ok and #Util.ArrayToTable(arr) > 0 then return true end
-    return false
+    return #partners(Util.Prop(bow, "BowStringCouplerRef")) > 0
+end
+
+-- Hand holding the grip (while drawing both hands hold the bow)
+local function gripHand(bow)
+    for _, p in ipairs(partners(Util.Prop(bow, "BowCouplerRef"))) do
+        local h = Player.HandOfCoupler(p)
+        if h ~= nil then return h end
+    end
+    return nil
 end
 
 local function newStats()
@@ -108,8 +114,9 @@ end
 
 -- applying = false measures only (tweaks disabled with F7)
 function BowBody.Tick(dtMs, applying)
-    local hand, bow = Player.HandHoldingClass({ BOW_CLASS })
-    if not bow then
+    local _, bow = Player.HandHoldingClass({ BOW_CLASS })
+    local hand = bow and gripHand(bow)
+    if hand == nil then
         if bowKey then reset() end
         return
     end
@@ -123,8 +130,9 @@ function BowBody.Tick(dtMs, applying)
     local mc = Player.MotionController(hand)
     local grip = Util.Prop(bow, "BowCouplerRef")
     if not mc or not grip then return end
-    local cLoc, cRot, gLoc = compLoc(mc), compRot(mc), compLoc(grip)
-    if not cLoc or not cRot or not gLoc then return end
+    local cLoc, gLoc = compLoc(mc), compLoc(grip)
+    local x, y, z = compAxes(mc)
+    if not cLoc or not gLoc or not x then return end
 
     local speed = 0
     if prevCtrl then
@@ -132,7 +140,6 @@ function BowBody.Tick(dtMs, applying)
     end
     prevCtrl = cLoc
 
-    local x, y, z = axes(cRot)
     local rel = { gLoc[1] - cLoc[1], gLoc[2] - cLoc[2], gLoc[3] - cLoc[3] }
     local drawing = stringHeld(bow)
 
@@ -142,6 +149,7 @@ function BowBody.Tick(dtMs, applying)
             local l = toLocal(rel, x, y, z)
             if restOffset == nil then
                 restOffset = l
+                Util.DLog("BowBody: grip offset learned (hand %d): %.1f %.1f %.1f", hand, l[1], l[2], l[3])
             else
                 for i = 1, 3 do restOffset[i] = restOffset[i] + (l[i] - restOffset[i]) * 0.1 end
             end
@@ -163,6 +171,10 @@ function BowBody.Tick(dtMs, applying)
     if k > 0 and errLen > 0.05 and errLen < cfg.MaxCorrection then
         local d = { X = err[1] * k, Y = err[2] * k, Z = err[3] * k }
         Util.SafeCall(function() bow:K2_AddActorWorldOffset(d, false, {}, true) end)
+        if not firstApplied then
+            firstApplied = true
+            Util.DLog("BowBody: first correction %.1f cm (k=%.2f)", errLen * k, k)
+        end
     else
         k = 0
     end
