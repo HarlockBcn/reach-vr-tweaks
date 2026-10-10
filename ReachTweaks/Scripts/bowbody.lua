@@ -104,6 +104,9 @@ local function bowHands(bow)
     return grip, drawing
 end
 
+-- Grip hand and drawing state of a bow (also used by lagprobe.lua)
+function BowBody.Hands(bow) return bowHands(bow) end
+
 local function newStats()
     local function one() return { n = 0, sum = 0, max = 0, post = 0, cPos = 0, bPos = 0, cRot = 0, bRot = 0 } end
     return { [false] = one(), [true] = one(), vmax = 0 }

@@ -4,6 +4,7 @@
 local Util = require("util")
 local Player = require("player")
 local Haptics = require("haptics")
+local BowBody = require("bowbody")
 
 local Probe = {}
 
@@ -79,7 +80,105 @@ local function logHandCouplers(pawn)
     end
 end
 
+-- Bow parts probe: error of every bow component against where it sits in the
+-- bow-hand controller space while only the grip is held. Shows which part of
+-- the bow lags while the string is drawn. Each line: name grip-only/drawing
+-- average error in cm.
+local PART_CLASSES = {
+    "StaticMeshComponent", "SkeletalMeshComponent", "PoseableMeshComponent", "SceneComponent",
+    "InstancedStaticMeshComponent", "SplineMeshComponent", "ChildActorComponent",
+    "NDNTShapedCoupler", "NDNTCoupler", "NDNTCouplerWithOverlap", "ArrowComponent",
+}
+local parts = nil     -- { key = bowKey, list = { {name, path, rest, ...} } }
+local partAcc, partV, prevBowCtrl = 0, 0, nil
+
+local function vec3(v) return { v.X, v.Y, v.Z } end
+local function dot3(a, b) return a[1] * b[1] + a[2] * b[2] + a[3] * b[3] end
+
+local function discoverParts(bow)
+    local list = { { name = "ActorRoot", path = nil } }
+    local seen = {}
+    for _, c in ipairs(Util.FindOwnedBy(bow, PART_CLASSES)) do
+        local full = c:GetFullName()
+        local path = full:match("^%S+%s+(.+)$")
+        if path and not seen[path] then
+            seen[path] = true
+            list[#list + 1] = { name = (full:match("^(%S+)") or "?") .. ":" .. (path:match("([^%.:]+)$") or path), path = path }
+        end
+    end
+    local names = {}
+    for _, p in ipairs(list) do names[#names + 1] = p.name end
+    Util.Log("[bowparts] %d parts: %s", #list, table.concat(names, ", "))
+    return list
+end
+
+local function partLoc(bow, p)
+    if p.path == nil then return actorLoc(bow) end
+    local ok, v = pcall(function()
+        local c = StaticFindObject(p.path)
+        if Util.IsValid(c) then return c:K2_GetComponentLocation() end
+        return nil
+    end)
+    if ok and v then return { X = v.X, Y = v.Y, Z = v.Z } end
+    return nil
+end
+
+local function probeBowParts(dtMs)
+    local _, bow = Player.HandHoldingClass({ "/Script/AtlasGameplay.AtlasBow" })
+    if not bow then parts = nil; return end
+    local hand, drawing = BowBody.Hands(bow)
+    if hand == nil then return end
+    local key = Util.Key(bow)
+    if not parts or parts.key ~= key then parts = { key = key, list = discoverParts(bow), heldMs = 0 } end
+    parts.heldMs = parts.heldMs + dtMs
+    local mc = Player.MotionController(hand)
+    if not mc then return end
+    local c = loc(mc)
+    local okA, x, y, z = pcall(function()
+        return vec3(mc:GetForwardVector()), vec3(mc:GetRightVector()), vec3(mc:GetUpVector())
+    end)
+    if not c or not okA then return end
+    local speed = prevBowCtrl and dist(c, prevBowCtrl) / (dtMs / 1000) or 0
+    prevBowCtrl = c
+    if speed > partV then partV = speed end
+    local learn = not drawing and parts.heldMs > 500 and speed < 40
+    for _, p in ipairs(parts.list) do
+        local l = partLoc(bow, p)
+        if l then
+            local rel = { l.X - c.X, l.Y - c.Y, l.Z - c.Z }
+            local lo = { dot3(rel, x), dot3(rel, y), dot3(rel, z) }
+            if learn then
+                if not p.rest then p.rest = lo else
+                    for i = 1, 3 do p.rest[i] = p.rest[i] + (lo[i] - p.rest[i]) * 0.1 end
+                end
+            end
+            if p.rest then
+                local d = { lo[1] - p.rest[1], lo[2] - p.rest[2], lo[3] - p.rest[3] }
+                local e = math.sqrt(dot3(d, d))
+                local k = drawing and "d" or "g"
+                p[k .. "s"] = (p[k .. "s"] or 0) + e
+                p[k .. "n"] = (p[k .. "n"] or 0) + 1
+            end
+        end
+    end
+    partAcc = partAcc + dtMs
+    if partAcc < 1000 then return end
+    partAcc = 0
+    local out = {}
+    for _, p in ipairs(parts.list) do
+        local g = p.gn and p.gn > 0 and string.format("%.1f", p.gs / p.gn) or "-"
+        local d = p.dn and p.dn > 0 and string.format("%.1f", p.ds / p.dn) or "-"
+        if p.rest then out[#out + 1] = string.format("%s %s/%s", p.name, g, d) end
+        p.gs, p.gn, p.ds, p.dn = 0, 0, 0, 0
+    end
+    if partV > 80 and #out > 0 then
+        Util.Log("[bowparts] vmax=%4.0f %s", partV, table.concat(out, " | "))
+    end
+    partV = 0
+end
+
 function Probe.Tick(dtMs)
+    Util.SafeCall(probeBowParts, dtMs)
     local pawn = Player.GetPawn()
     if not pawn then return end
     logHandCouplers(pawn)
