@@ -1,0 +1,14 @@
+# Runtime output
+ReachTweaks.log
+*.log
+
+# Local UE4SS zip for offline installs
+UE4SS_v*.zip
+
+# Reverse-engineering artifacts (large / derived from the game)
+publics.txt
+*.dmp
+
+# Python
+__pycache__/
+*.pyc
