@@ -153,6 +153,8 @@ function Install-Mod($bin, $manifest) {
     if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
     Copy-Item $ModSource $dst -Recurse -Force
     if ($logBak) { Move-Item $logBak $logDst -Force }
+    # Lets the mod re-read the package config too (F7 reload), so either copy can be edited in game
+    [IO.File]::WriteAllText((Join-Path $dst 'package_config.txt'), (Resolve-Path $cfgSrc).Path)
     $modsTxt = Join-Path $modsDir 'mods.txt'
     if (Test-Path $modsTxt) {
         # Only ReachTweaks: the UE4SS sample mods (console, cheats...)

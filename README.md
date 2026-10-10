@@ -5,7 +5,8 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 1. **Agile hands** – removes the sluggish "weight" of held weapons. The game ties a held weapon to the hand with a damped spring (`UAtlasThrowableResolver::ApplyWeight`); the mod makes that spring stiffer and critically damped while the weapon is held (×10 by default).
 2. **Bow haptics** – vibration that grows while drawing, tension "clicks" at 25/50/75 %, a buzz at full draw and a kick on release.
 3. **Firearm haptics** – a sharp kick with a fading tail on every shot, also on the supporting hand, plus scaling of the game's own weapon vibrations.
-4. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
+4. **Sprint slide** – crouching (ducking your head or pressing the crouch button, "B" by default) while sprinting slides you a few metres in the direction you were running, at the game's crouch height; the sprint speed lines stay on. Afterwards you stand up again (a button slide stays crouched if the button is still held). Sprinting is not possible while crouched. Crouching while walking is unchanged.
+5. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 
 ## Install & play
 
@@ -20,13 +21,13 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 
 | Key | Action |
 |---|---|
-| **F7** | Toggle all tweaks on/off to compare with the original game. A floating text appears in front of you; two short taps = ON, one long buzz = OFF |
+| **F7** | Toggle all tweaks on/off to compare with the original game. A floating text appears in front of you; two short taps = ON, one long buzz = OFF. Turning them ON re-reads `config.lua` |
 | F5 / F6 | (Testing, `TestGuns = true`) spawn the next weapon / spawn the last one again |
 | F8 | (Testing) cycle weight-stiffness levels: Mod config → Original → ×3 → ×10 → ×30 → ×100 |
 
 ## Configuration
 
-Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`.
+Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`. While playing, edit either copy (this package's `ReachTweaks\config.lua` or the installed `Atlas\Binaries\Win64\ue4ss\Mods\ReachTweaks\config.lua`) and press F7 twice (OFF, ON): the mod re-reads the copy whose text changed (the launcher writes the package path into `package_config.txt` next to the installed mod, and copies a newer installed copy back to the package on the next launch). Only `Enabled` and `Debug` changes need a restart.
 
 | Setting | Meaning |
 |---|---|
@@ -37,6 +38,12 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`.
 | `BowBody.*` | Experimental, disabled (see Known issues) |
 | `Guns.FireAmplitude`, `FireDurationMs` | Shot kick and recoil duration |
 | `Guns.NativeHapticScale` | Multiplies the game's own weapon vibrations |
+| `Slide.Trigger` | `"both"` (duck your head or press crouch), `"head"` or `"button"` |
+| `Slide.CrouchDropCm`, `CrouchWindowMs` | Head drop (cm) within this time that counts as a quick duck |
+| `Slide.MinSpeed`, `SpeedBoost`, `MaxSpeed` | Minimum running speed, start speed = running speed × boost (capped) |
+| `Slide.DurationMs`, `EndSpeedFactor` | Slide time and final speed (share of the start speed) |
+| `Slide.CrouchDownMs` | Time to get fully crouched when a slide starts (the game takes ~870 ms; 0 = game speed) |
+| `Slide.KeepSprintLines`, `NoSprintWhileCrouched`, `HapticAmplitude` | Speed lines while sliding, sprint lock while crouched, slide rumble |
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
 | `Debug` | Writes details to `ue4ss\Mods\ReachTweaks\ReachTweaks.log` |
 
@@ -52,6 +59,8 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/bow.lua         bow haptics
   Scripts/bowbody.lua     bow body follow while drawing (experimental, disabled)
   Scripts/guns.lua        firearm haptics
+  Scripts/slide.lua       sprint slide
+  Scripts/keys.lua        keyboard shortcuts (polled on the game thread)
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
   Scripts/intro.lua       fast startup
@@ -73,8 +82,12 @@ The game ships `Atlas-Win64-Shipping.pdb`, so class/property/function names and 
 Key findings:
 
 - Weapon heaviness = `UAtlasThrowableResolver::ApplyWeight` (`VectorSpringInterp` / `QuaternionSpringInterp`, mass 1.0) with `LinearStiffness`/`LinearDamping`/`AngularStiffness`/`AngularDamping`. `AtlasGunResolver` derives from it.
+- Player locomotion = `UAtlasMovementComponent` (pawn `AtlasMovementComponentReference`, Blueprint subclass `BP_AtlasMovementComponent_C`, movement loop in Blueprint). Sprint: `bIsSprinting` (+0x315), `StartSprint`/`StopSprint` set `Speed` to `RunSpeed`/`WalkSpeed` and broadcast `OnSprintStarted`/`OnSprintEnded`; the sprint input (native `OnSprintInput`) only starts a sprint when `bIsSprinting` is false. The sprint lines are the pawn component `BP_VFX_SprintFX`, which polls `GetIsSprinting` every frame (`PreviouslySprinting`).
+- Crouch: physical (head height) or the crouch button, input action `/Game/AtlasProto/Blueprints/Input/Actions/Movement/IA_Crouch` ("B"), handled only in Blueprint by `InpActEvt_IA_Crouch_K2Node_EnhancedInputActionEvent_0`, one event per press (`UEnhancedInputLibrary::GetBoundActionValue` cannot poll it: it only works for value bindings). It toggles `StartButtonCrouch`/`StopButtonCrouch` (`bButtonCrouch`, `bWantsToCrouch`, `bIsCrouching`). Crouching eases `Crouch Height` from ~90 down to `ButtonCrouchHeight` (50) in ~870 ms, which lowers the whole actor. `StopButtonCrouch` alone leaves `bWantsToCrouch` set; `TryUncrouch` → `UnCrouch` gives the real height back. The "On Sprint Started" handler calls `TryUncrouch`, so a sprint stands the player up.
+- Thrusters: `AddLinearThruster(FAtlasMovementThrusterLinear)` gives `Direction * Strength` (× `StrengthOverTime` curve over `Duration` if set); non-additive thrusters replace the movement velocity (summed if several), additive ones add to it; expired ones are removed after each movement update; `HasActiveOverrideThrusters` tells whether one is running.
+- Sprint slide (`slide.lua`): chains short non-additive thrusters (only when none is active); keeps the lines by writing `bIsSprinting` directly (no `OnSprintStarted`, which would uncrouch); a head slide calls `StartButtonCrouch`, then `StopButtonCrouch` + `TryUncrouch` (+ `UnCrouch`) at the end; drives `Crouch Height` down faster; the crouch lock holds `bIsSprinting` on with walk `Speed` so the sprint input cannot start a sprint. The standing head height is learnt from the measured head height (the game's calibration offset did not match it after a level change); moves over 3 m in one tick are treated as teleports.
 - Dead ends (no effect, the resolvers run with `MovementMethod = NoPhysics`): `ObjectPosition/RotationHeaviness`, `MagicNumber_*`, `ResolverLinear/AngularStiffness`, recoil springs, `ND.HandGrab.*` lerp settings.
-- UE4SS quirks: `K2_GetComponentsByClass` fails (use `FindAllOf` + owner); `FindAllOf` is exact-class only; pawn hand properties are `NDComponentPath` structs (use the `...Reference` properties); never keep UObjects across ticks.
+- UE4SS quirks: `K2_GetComponentsByClass` fails (use `FindAllOf` + owner); `FindAllOf` is exact-class only; pawn hand properties are `NDComponentPath` structs (use the `...Reference` properties); never keep UObjects across ticks; never run Lua off the game thread: `RegisterKeyBind` and `ExecuteWithDelay` callbacks run on UE4SS threads and crashed the game inside UE4SS (keys are polled with `IsInputKeyDown`, delays use `Util.After`).
 
 ## Known issues / TODO
 

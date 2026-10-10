@@ -104,11 +104,7 @@ function Experiments.Next()
 end
 
 function Experiments.Init()
-    Util.SafeCall(function()
-        RegisterKeyBind(Key.F8, function()
-            ExecuteInGameThread(function() Util.SafeCall(Experiments.Next) end)
-        end)
-    end)
+    require("keys").Bind("F8", Experiments.Next)
     Util.Log("Experiments: F8 = next")
 end
 

@@ -61,9 +61,7 @@ function Notify.Show(text, color, seconds)
     Util.Log("Message: %s", text)
 
     -- On expiry it is looked up again by its tag (the old reference is never used)
-    ExecuteWithDelay(math.floor((seconds or 2.5) * 1000), function()
-        ExecuteInGameThread(function() Util.SafeCall(clear, myGen) end)
-    end)
+    Util.After((seconds or 2.5) * 1000, function() clear(myGen) end)
 end
 
 return Notify

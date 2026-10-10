@@ -77,16 +77,12 @@ local function spawnIndex(i)
 end
 
 function Spawner.Init()
-    local function bind(key, fn)
-        Util.SafeCall(function()
-            RegisterKeyBind(key, function() ExecuteInGameThread(function() Util.SafeCall(fn) end) end)
-        end)
-    end
-    bind(Key.F5, function()
+    local Keys = require("keys")
+    Keys.Bind("F5", function()
         index = index % #GUNS + 1
         spawnIndex(index)
     end)
-    bind(Key.F6, function()
+    Keys.Bind("F6", function()
         if index == 0 then index = 1 end
         spawnIndex(index)
     end)

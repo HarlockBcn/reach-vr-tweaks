@@ -150,4 +150,26 @@ function Util.Prop(obj, name)
     return nil
 end
 
+-- Delayed calls run from the game-thread main loop (UE4SS ExecuteWithDelay
+-- runs its callback on another thread, which is not safe with our Lua).
+local timers = {}
+
+function Util.After(ms, fn)
+    timers[#timers + 1] = { left = ms, fn = fn }
+end
+
+function Util.RunTimers(dtMs)
+    if #timers == 0 then return end
+    local due = {}
+    for i = #timers, 1, -1 do
+        local t = timers[i]
+        t.left = t.left - dtMs
+        if t.left <= 0 then
+            table.remove(timers, i)
+            due[#due + 1] = t.fn
+        end
+    end
+    for i = #due, 1, -1 do Util.SafeCall(due[i]) end
+end
+
 return Util

@@ -1,5 +1,5 @@
 # Reads reflected property offsets from the FGenericPropertyParams structs in the exe.
-# usage: propoff.py Atlas-Win64-Shipping.exe publics.txt UAtlasThrowableResolver
+# usage: propoff.py Atlas-Win64-Shipping.exe publics.txt UAtlasThrowableResolver   (classes or structs, e.g. FAtlasMovementThrusterLinear)
 # UE 5.4: {const char* Name; const char* RepNotify; uint64 PropertyFlags;
 #          uint32 GenFlags; uint32 ObjectFlags; void* Setter; void* Getter;
 #          uint16 ArrayDim; uint16 Offset; ...}
@@ -17,7 +17,7 @@ for i in range(nsec):
 def off(r):
     for va, sz, rp in secs:
         if va <= r < va + sz: return r - va + rp
-pat = re.compile(r'\?NewProp_([A-Za-z0-9_]+)@Z_Construct_UClass_%s_Statics@@2U(F\w+PropertyParams)' % cls)
+pat = re.compile(r'\?NewProp_([A-Za-z0-9_]+)@Z_Construct_U(?:Class|ScriptStruct)_%s_Statics@@2U(F\w+PropertyParams)' % cls)
 rows = []
 for line in open(pub, encoding='utf-8'):
     a, _f, n = line.rstrip('\n').split('\t', 2)

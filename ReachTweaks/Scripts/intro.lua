@@ -67,11 +67,9 @@ function Intro.Tick(pc)
         lastWorld = w
         Util.Log("[intro] +%ds world: %s", os.time() - startClock, w)
         if cfg.SkipShaderWarmup and w:find(PSO_WORLD, 1, true) then
-            ExecuteWithDelay(3000, function()
-                ExecuteInGameThread(function()
-                    local cur = FindFirstOf("PlayerController")
-                    if Util.IsValid(cur) then jumpToMenu(cur, "shader warm-up") end
-                end)
+            Util.After(3000, function()
+                local cur = FindFirstOf("PlayerController")
+                if Util.IsValid(cur) then jumpToMenu(cur, "shader warm-up") end
             end)
         end
     end
@@ -93,11 +91,9 @@ function Intro.Init(config)
             Util.Log("[intro] +%ds Splash created: %s", os.time() - startClock, str(obj))
             if cfg.SkipLogos then
                 -- Short wait so the GameInstance finishes setting up
-                ExecuteWithDelay(500, function()
-                    ExecuteInGameThread(function()
-                        local pc = FindFirstOf("PlayerController")
-                        if Util.IsValid(pc) then jumpToMenu(pc, "logos and warning") end
-                    end)
+                Util.After(500, function()
+                    local pc = FindFirstOf("PlayerController")
+                    if Util.IsValid(pc) then jumpToMenu(pc, "logos and warning") end
                 end)
             end
         end)

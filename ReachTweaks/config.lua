@@ -2,6 +2,10 @@
 --  ReachTweaks - configuration
 --  Edit the values and relaunch the game with
 --  "Play_ReachTweaks.bat" (it copies this file into the game).
+--  In game: edit this file (or the copy in
+--  Atlas\Binaries\Win64\ue4ss\Mods\ReachTweaks) and press F7 twice
+--  (OFF, ON): turning the tweaks on re-reads the copy you changed.
+--  ("Enabled" and "Debug" changes still need a restart.)
 -- ============================================================
 return {
     -- Write detailed information to ReachTweaks.log and ue4ss\UE4SS.log
@@ -83,5 +87,31 @@ return {
         OtherHandFactor = 0.7,       -- supporting hand when held with two hands
         -- Multiplies the game's original weapon vibrations (1 = unchanged)
         NativeHapticScale = 1.5,
+    },
+
+    -- --------------------------------------------------------
+    -- 5) SPRINT SLIDE
+    -- Crouch while sprinting to slide a few metres in the direction
+    -- you were running. Crouching while walking behaves as in the
+    -- original game.
+    -- --------------------------------------------------------
+    Slide = {
+        Enabled = true,
+        -- "both" = duck your head or press the crouch button ("B" by default)
+        -- "head" = ducking only; "button" = crouch button only
+        Trigger = "both",
+        CrouchDropCm = 25,       -- how far the head must drop to count as a crouch
+        CrouchWindowMs = 250,    -- ...within this time (slow crouches do not slide)
+        MinSpeed = 250,          -- minimum running speed to slide (cm/s)
+        SpeedBoost = 1.6,        -- slide start speed = running speed x this
+        MaxSpeed = 1600,         -- cap for the slide start speed (cm/s)
+        DurationMs = 1400,       -- slide length in time (with these values ~6.5 m at full sprint)
+        EndSpeedFactor = 0.4,    -- speed at the end of the slide (share of the start)
+        KeepSprintLines = true,  -- keep the sprint speed lines while sliding
+        NoSprintWhileCrouched = true, -- crouched (button or physically) = no sprint
+        CrouchDownMs = 300,      -- time to get fully crouched when a slide starts (game: ~870; 0 = game speed)
+        HapticAmplitude = 0.3,   -- light rumble while sliding (0 = off)
+        CooldownMs = 600,        -- minimum time between slides
+        ThrusterStepMs = 30,     -- internal: length of each movement push
     },
 }
