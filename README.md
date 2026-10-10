@@ -76,5 +76,5 @@ Key findings:
 
 ## Known issues / TODO
 
-- Bow: the weight-stiffness change is not yet noticeable on the bow.
+- Bow: it has no weight spring (`BP_BowResolver_C` derives from `UNDNTResolverBasic`, motion `Weighting` is always 1.0), so the stiffness tweak does not apply to it. Measured lag is already as low as a tweaked gun (a few cm at 200–300 cm/s). Making the arbiter tick after the motion controllers (tick prerequisites) had no measurable effect.
 - Height calibration screen is not skipped.

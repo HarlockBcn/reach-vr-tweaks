@@ -21,8 +21,7 @@ return {
     -- --------------------------------------------------------
     -- TESTING: F5 spawns the next weapon in front of you
     -- (Handgun, shotgun, grenade launcher), F6 repeats the last
-    -- one, F8 cycles weight-stiffness experiments, F9 toggles the
-    -- tick-order fix.
+    -- one, F8 cycles weight-stiffness experiments.
     -- The game window on the PC must have focus.
     -- --------------------------------------------------------
     TestGuns = true,
@@ -39,9 +38,6 @@ return {
         WeightDamping = 1.0,               -- 1.0 = no wobble (critical damping)
         -- "weapons" = guns and bow only; "all" = any throwable object
         Scope = "weapons",
-        -- Experimental: make the system that moves held objects run after the
-        -- controllers update, removing ~1 frame of lag (toggle in game with F9)
-        TickOrderFix = false,
     },
 
     -- --------------------------------------------------------

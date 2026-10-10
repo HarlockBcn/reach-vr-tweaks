@@ -35,7 +35,6 @@ local Intro = require("intro")
 local Spawner = require("spawner")
 local Notify = require("notify")
 local LagProbe = require("lagprobe")
-local TickOrder = require("tickorder")
 
 Player.Init()
 if config.Hands.Enabled then Hands.Init(config.Hands) end
@@ -54,22 +53,6 @@ if config.TestGuns then
 end
 local function experimenting() return Experiments ~= nil and Experiments.Active() end
 
--- Tick-order fix: from config, toggled at runtime with F9 (testing)
-local tickOrderWanted = config.Hands.Enabled and config.Hands.TickOrderFix == true
-if tickOrderWanted then TickOrder.Set(true) end
-if config.TestGuns then
-    Util.SafeCall(function()
-        RegisterKeyBind(Key.F9, function()
-            ExecuteInGameThread(function()
-                tickOrderWanted = not tickOrderWanted
-                Util.SafeCall(TickOrder.Set, tickOrderWanted)
-                Notify.Show("Tick-order fix: " .. (tickOrderWanted and "ON" or "OFF"),
-                    { R = 255, G = 210, B = 80 }, 2.5)
-            end)
-        end)
-    end)
-end
-
 -- F7: toggle the tweaks at runtime (to compare with the original game)
 local active = true
 
@@ -79,7 +62,6 @@ local function setActive(on)
     Haptics.Muted = not on
     if on then
         Notify.Show("ReachTweaks: ON", { R = 80, G = 255, B = 120 })
-        if tickOrderWanted then Util.SafeCall(TickOrder.Set, true) end
         -- two short taps
         for h = 0, 1 do Haptics.Pulse(h, 0.6, 60, 0.6, 1.0, true) end
         ExecuteWithDelay(150, function()
@@ -90,7 +72,6 @@ local function setActive(on)
     else
         if config.Hands.Enabled then Util.SafeCall(Hands.RestoreAll) end
         if Experiments then Util.SafeCall(Experiments.RestoreAll) end
-        Util.SafeCall(TickOrder.Set, false)
         if config.Guns.Enabled then Util.SafeCall(Guns.RestoreNative) end
         Notify.Show("ReachTweaks: OFF", { R = 255, G = 90, B = 80 })
         -- one long buzz
@@ -157,7 +138,6 @@ local function tick()
         slowAcc = 0
         if active and config.Hands.Enabled and not experimenting() then step("Hands.Tick", Hands.Tick) end
         if active and experimenting() then step("Experiments.Tick", Experiments.Tick) end
-        if active then step("TickOrder.Tick", TickOrder.Tick) end
     end
     if dataAcc >= 2000 then
         dataAcc = 0
