@@ -29,20 +29,6 @@ local function dist(a, b)
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 end
 
--- Player motion controllers per hand, from MotionSource ("Left"/"Right")
-local function controllers(pawn)
-    local res = {}
-    for _, mc in ipairs(Util.FindOwnedBy(pawn, { "MotionControllerComponent" })) do
-        local ok, src = pcall(function() return mc.MotionSource:ToString() end)
-        if ok and src then
-            local s = src:lower()
-            if s:find("left") then res[0] = res[0] or mc end
-            if s:find("right") then res[1] = res[1] or mc end
-        end
-    end
-    return res
-end
-
 local function newStats()
     return { vmax = 0, chMin = 1e9, chMax = 0, chSum = 0, hgMin = 1e9, hgMax = 0, n = 0, held = "nothing",
              wMin = 1e9, wMax = -1e9, owMin = 1e9, stepMax = 0, mn = 0 }
@@ -97,9 +83,8 @@ function Probe.Tick(dtMs)
     local pawn = Player.GetPawn()
     if not pawn then return end
     logHandCouplers(pawn)
-    local mcs = controllers(pawn)
     for hand = 0, 1 do
-        local mc = mcs[hand]
+        local mc = Player.MotionController(hand)
         local mesh = Util.Prop(pawn, hand == Haptics.LEFT and "HandMeshRootLeftReference" or "HandMeshRootRightReference")
         local c, h = mc and loc(mc), mesh and loc(mesh)
         if c and h then

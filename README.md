@@ -5,7 +5,8 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 1. **Agile hands** – removes the sluggish "weight" of held weapons. The game ties a held weapon to the hand with a damped spring (`UAtlasThrowableResolver::ApplyWeight`); the mod makes that spring stiffer and critically damped while the weapon is held (×10 by default).
 2. **Bow haptics** – vibration that grows while drawing, tension "clicks" at 25/50/75 %, a buzz at full draw and a kick on release.
 3. **Firearm haptics** – a sharp kick with a fading tail on every shot, also on the supporting hand, plus scaling of the game's own weapon vibrations.
-4. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
+4. **Lighter bow body while drawing** – while the string is held the game averages the bow-hand and string-hand motions, so the bow body follows the bow hand slowly. The mod pulls the bow grip back towards the bow hand (position only; the string and the aim are left to the game).
+5. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 
 ## Install & play
 
@@ -34,6 +35,8 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`.
 | `Hands.WeightDamping` | 1.0 = no wobble (critical damping) |
 | `Hands.Scope` | `"weapons"` (guns and bow) or `"all"` (any throwable) |
 | `Bow.*` | Draw / click / full-draw / release vibration amplitudes |
+| `BowBody.BodyFollow` | 0 = original, 1 = bow grip locked to the hand while drawing |
+| `BowBody.BlendMs` | Fade time of the correction when grabbing/releasing the string |
 | `Guns.FireAmplitude`, `FireDurationMs` | Shot kick and recoil duration |
 | `Guns.NativeHapticScale` | Multiplies the game's own weapon vibrations |
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
@@ -49,6 +52,7 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/main.lua        entry point, main loop, F7 toggle
   Scripts/hands.lua       weight-spring patch (agile hands)
   Scripts/bow.lua         bow haptics
+  Scripts/bowbody.lua     bow body follow while drawing
   Scripts/guns.lua        firearm haptics
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
@@ -76,7 +80,8 @@ Key findings:
 
 ## Known issues / TODO
 
-- **Bow body is sluggish while the string is drawn (next task).** With only the grip held, the bow follows the hand well. While the string is held with the other hand, the bow *body* follows the bow hand slowly. Goal: make the bow body lighter/more agile while drawing, configurable, **without changing how the string behaves** (do not touch `BowStringCouplerRef` weights).
-  - Known facts: `BP_BowResolver_C` derives from `UNDNTResolverBasic` (no weight spring; `HandCouplingSmoothingSpeed = 0.3` only acts right after grabbing). Motion `Weighting` is always 1.0. Tick-order prerequisites had no effect. When both bow couplers are active, `UNDNTResolverBasic::CombineMotionsWithMagnets` (rva 0x46cb280) averages the motions; per-motion weight = `pow(motion[+4] / max(param, eps), MagneticExponent@0xbc8)`, and `MagneticExponent = 0` on the bow, so grip and string motions weigh the same.
-  - Leads: (1) `AAtlasBow` smooth-attach/nock smoothing: `SmoothAttachDuration`, `SmoothAttachBlendDuration`, `SmoothAttachExponent`, `SmoothAttachEasingFunc`, `SmoothAttachCouplerRef`, native `TickSmoothNock`; (2) bias the combiner towards the grip motion via `MagneticExponent` / `MagneticClippingCoefficient` on the bow resolver (needs the meaning of motion field +4 and the float param); (3) measure with `lagprobe.lua` (bow-hand controller-hand distance with and without the string held: ~16-22 cm vs ~13 cm at rest).
+- **Bow body while drawing (in progress, `bowbody.lua`).** With only the grip held the bow follows the hand well; while the string is held the bow *body* follows the bow hand slowly. Constraint: do **not** change how the string behaves (do not touch `BowStringCouplerRef` weights).
+  - Cause: `UNDNTResolverBasic::CalculateMotionInternal` (rva 0x46c6ca0) builds one motion per active coupler (weight = motion[+4] * motion[+8]) and `CombineMotionsWithMagnets` (rva 0x46cb280) blends them: per-motion weight = `pow(w / max(maxW, 1e-4), MagneticExponent@0xbc8)`; positions are a weighted average, rotations an incremental slerp. On the bow `MagneticExponent = 0` and both weights are equal, so grip and string motions weigh the same. `MagneticExponent` only helps if the weights differ, which requires changing the string coupler (rejected). `MagneticClippingCoefficient@0xbc4` is not read by these functions.
+  - Dead end: `AAtlasBow::TickSmoothNock` and `SmoothAttach*` only ease the **arrow** onto the nock (`TEase` + `SetActorTransform` on the arrow owned by `SmoothAttachCouplerRef`, then `BP_OnArrowNocked`). `OnBowGrabbed` / `OnBowStringGrabbed` only fire BP events.
+  - Fix: `bowbody.lua` learns the grip coupler (`BowCouplerRef`, a capsule component) position in the bow-hand motion controller space while only the grip is held and the hand is still, and while the string is held adds `BodyFollow` × the error as a world offset to the bow actor (teleport, no sweep). With `Debug = true` it logs `[bowbody]` lines once per second with the grip error (cm) while grip-only and while drawing; F7 switches between mod and original for A/B measurements.
 - Height calibration screen is not skipped.

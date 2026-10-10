@@ -1,5 +1,5 @@
 -- ReachTweaks: agile hands with weapons + better bow and firearm haptics.
-local VERSION = "1.2.0"
+local VERSION = "1.3.0"
 
 local Util = require("util")
 
@@ -29,6 +29,7 @@ local Haptics = require("haptics")
 local Player = require("player")
 local Hands = require("hands")
 local Bow = require("bow")
+local BowBody = require("bowbody")
 local Guns = require("guns")
 local Diag = require("diag")
 local Intro = require("intro")
@@ -39,6 +40,8 @@ local LagProbe = require("lagprobe")
 Player.Init()
 if config.Hands.Enabled then Hands.Init(config.Hands) end
 if config.Bow.Enabled then Bow.Init(config.Bow) end
+local bowBodyOn = config.BowBody ~= nil and config.BowBody.Enabled == true
+if bowBodyOn then BowBody.Init(config.BowBody) end
 if config.Guns.Enabled then Guns.Init(config.Guns) end
 Intro.Init(config.Intro or {})
 local Experiments = nil
@@ -149,6 +152,7 @@ local function tick()
     end
 
     if Util.Debug then step("LagProbe.Tick", LagProbe.Tick, dt) end
+    if bowBodyOn then step("BowBody.Tick", BowBody.Tick, dt, active and not experimenting()) end
     if active and config.Bow.Enabled then step("Bow.Tick", Bow.Tick, dt) end
     if active and config.Guns.Enabled then step("Guns.Tick", Guns.Tick, dt) end
     step("Haptics.Tick", Haptics.Tick, dt, pc)
@@ -177,6 +181,6 @@ else
     end)
 end
 
-Util.Log("ReachTweaks %s loaded (hands=%s bow=%s guns=%s debug=%s loop=%s)", VERSION,
-    tostring(config.Hands.Enabled), tostring(config.Bow.Enabled),
+Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s debug=%s loop=%s)", VERSION,
+    tostring(config.Hands.Enabled), tostring(config.Bow.Enabled), tostring(bowBodyOn),
     tostring(config.Guns.Enabled), tostring(Util.Debug), loopKind)

@@ -58,7 +58,20 @@ return {
     },
 
     -- --------------------------------------------------------
-    -- 3) FIREARMS
+    -- 3) BOW BODY WHILE DRAWING
+    -- While the string is held, the game averages the bow hand and
+    -- the string hand, so the bow body follows the bow hand slowly.
+    -- This pulls the bow grip back to the bow hand. Only the bow
+    -- position is corrected: the string and the aim are untouched.
+    -- --------------------------------------------------------
+    BowBody = {
+        Enabled = true,
+        BodyFollow = 0.8,   -- 0 = original game, 1 = grip locked to the hand
+        BlendMs = 150,      -- fade in/out time when grabbing/releasing the string
+    },
+
+    -- --------------------------------------------------------
+    -- 4) FIREARMS
     -- --------------------------------------------------------
     Guns = {
         Enabled = true,

@@ -104,6 +104,19 @@ function Player.HandHoldingClass(classPaths)
     return nil, nil
 end
 
+-- Real motion controller of a hand (from MotionSource "Left"/"Right").
+-- Looked up every call (object references are never kept across ticks).
+function Player.MotionController(hand)
+    local pawn = Player.GetPawn()
+    if not pawn then return nil end
+    local want = hand == Haptics.LEFT and "left" or "right"
+    for _, mc in ipairs(Util.FindOwnedBy(pawn, { "MotionControllerComponent" })) do
+        local ok, src = pcall(function() return mc.MotionSource:ToString() end)
+        if ok and src and src:lower():find(want) then return mc end
+    end
+    return nil
+end
+
 -- Hand a coupler belongs to (if it is a player hand).
 function Player.HandOfCoupler(coupler)
     for hand = 0, 1 do
