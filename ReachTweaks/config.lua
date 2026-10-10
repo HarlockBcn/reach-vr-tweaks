@@ -126,11 +126,25 @@ return {
         MinHandSpeed = 80,       -- how fast each hand must swing (cm/s, average)
         MaxCorrelation = -0.3,   -- hands must move in opposite directions (-1 = perfectly opposite)
         StartMs = 200,           -- swing this long to start sprinting
-        StopMs = 500,            -- stop swinging this long to walk again
+        StillMs = 100,           -- a hand stopped this long = walk again at once
+        StopMs = 500,            -- swing no longer like running (e.g. hands together) this long = walk again
         MinStick = 0.3,          -- stick deflection needed (0..1); no sprint while standing still
         HapticAmplitude = 0.15,  -- short tap when the sprint starts (0 = off)
         WindowMs = 400,          -- internal: time window for the swing measurement
         SmoothMs = 40,           -- internal: hand velocity smoothing
+        StillWindowMs = 150,     -- internal: short time window to detect stopped hands
         RetryMs = 500,           -- internal: wait before restarting a sprint the game ended
+    },
+
+    -- --------------------------------------------------------
+    -- 7) SPRINT SPEED
+    -- Scales the game's sprint speed (stick click or arm swing).
+    -- With Debug = true the log shows the game's value ([sprint]).
+    -- The slide starts from the running speed, so it gets faster
+    -- too (up to Slide.MaxSpeed).
+    -- --------------------------------------------------------
+    Sprint = {
+        Enabled = true,
+        SpeedMultiplier = 1.2,   -- 1.0 = original; 1.5 = 50 % faster
     },
 }

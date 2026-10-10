@@ -9,6 +9,10 @@
 -- short window: both hands must swing fast enough (RMS speed) and in
 -- opposite directions (negative correlation). Moving both hands together
 -- (aiming, climbing, looking around) does not count.
+-- Stopping is measured separately with a much shorter window: the swing
+-- window needs ~1 s to forget a fast swing, so when either hand's short-window
+-- speed drops below MinHandSpeed for StillMs the gesture ends at once. A
+-- swinging hand stays well above that even at the turning points.
 --
 -- Sprint: StartSprint / StopSprint on the movement component, the same
 -- functions the sprint input uses (Speed = RunSpeed / WalkSpeed, sprint lines,
@@ -32,8 +36,9 @@ local lastKey = nil
 local lastS = { [0] = nil, [1] = nil }   -- last swing coordinate per hand (cm)
 local vel = { [0] = 0, [1] = 0 }          -- smoothed swing velocity (cm/s)
 local eLL, eRR, eLR = 0, 0, 0             -- windowed velocity products
+local fLL, fRR = 0, 0                     -- short-window squared velocities (stop detection)
 local gesture = false
-local onMs, offMs = 0, 0
+local onMs, offMs, stillMs = 0, 0, 0
 local ours = false               -- the current sprint was started here
 local retryMs = 0                -- wait before starting again after the game ended our sprint
 local logAcc = 0
@@ -99,16 +104,18 @@ local function reset()
     lastS[0], lastS[1] = nil, nil
     vel[0], vel[1] = 0, 0
     eLL, eRR, eLR = 0, 0, 0
-    gesture, onMs, offMs = false, 0, 0
+    fLL, fRR = 0, 0
+    gesture, onMs, offMs, stillMs = false, 0, 0, 0
 end
 
--- Updates the gesture statistics; returns true while the hands swing like a runner.
+-- Updates the gesture statistics; returns whether the hands swing like a
+-- runner, whether a hand has stopped, and the values for the log.
 local function measure(pawn, mc, dt)
     local head = headComponent(pawn, mc)
     local hp = location(head)
     if not hp then
         warnOnce("head", "[armsprint] head component not found")
-        return false
+        return false, true
     end
     local fx, fy = headForward(head)
     local smooth = Util.Clamp(dt / (cfg.SmoothMs / 1000), 0, 1)
@@ -132,9 +139,14 @@ local function measure(pawn, mc, dt)
     eLL = eLL + (vl * vl - eLL) * a
     eRR = eRR + (vr * vr - eRR) * a
     eLR = eLR + (vl * vr - eLR) * a
+    local f = Util.Clamp(dt / (cfg.StillWindowMs / 1000), 0, 1)
+    fLL = fLL + (vl * vl - fLL) * f
+    fRR = fRR + (vr * vr - fRR) * f
     local rmsL, rmsR = math.sqrt(eLL), math.sqrt(eRR)
     local corr = (eLL > 1 and eRR > 1) and eLR / math.sqrt(eLL * eRR) or 0
-    return rmsL >= cfg.MinHandSpeed and rmsR >= cfg.MinHandSpeed and corr <= cfg.MaxCorrelation, rmsL, rmsR, corr
+    local min2 = cfg.MinHandSpeed * cfg.MinHandSpeed
+    local still = fLL < min2 or fRR < min2
+    return rmsL >= cfg.MinHandSpeed and rmsR >= cfg.MinHandSpeed and corr <= cfg.MaxCorrelation, still, rmsL, rmsR, corr
 end
 
 local function start(mc)
@@ -169,14 +181,18 @@ function ArmSprint.Tick(dtMs)
     end
 
     local dt = dtMs / 1000
-    local swinging, rmsL, rmsR, corr = measure(pawn, mc, dt)
+    local swinging, still, rmsL, rmsR, corr = measure(pawn, mc, dt)
+    -- A stopped hand also blocks the start: the swing window still remembers
+    -- the swing for a while and would turn the gesture on again every tick
+    swinging = swinging and not still
     if swinging then onMs, offMs = onMs + dtMs, 0 else onMs, offMs = 0, offMs + dtMs end
+    if still then stillMs = stillMs + dtMs else stillMs = 0 end
     if not gesture and onMs >= cfg.StartMs then
         gesture = true
         Util.DLog("[armsprint] gesture on (L=%.0f R=%.0f cm/s, corr=%.2f)", rmsL or 0, rmsR or 0, corr or 0)
-    elseif gesture and offMs >= cfg.StopMs then
+    elseif gesture and (stillMs >= cfg.StillMs or offMs >= cfg.StopMs) then
         gesture = false
-        Util.DLog("[armsprint] gesture off")
+        Util.DLog("[armsprint] gesture off (%s)", stillMs >= cfg.StillMs and "hands stopped" or "swing lost")
     end
     if retryMs > 0 then retryMs = retryMs - dtMs end
 
@@ -229,6 +245,8 @@ function ArmSprint.Init(config)
     cfg.MaxCorrelation = cfg.MaxCorrelation or -0.3
     cfg.StartMs = cfg.StartMs or 200
     cfg.StopMs = cfg.StopMs or 500
+    cfg.StillMs = cfg.StillMs or 100
+    cfg.StillWindowMs = cfg.StillWindowMs or 150
     cfg.MinStick = cfg.MinStick or 0.3
     cfg.WindowMs = cfg.WindowMs or 400
     cfg.SmoothMs = cfg.SmoothMs or 40

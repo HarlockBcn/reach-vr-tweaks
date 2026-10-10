@@ -7,7 +7,8 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 3. **Firearm haptics** – a sharp kick with a fading tail on every shot, also on the supporting hand, plus scaling of the game's own weapon vibrations.
 4. **Sprint slide** – crouching (ducking your head or pressing the crouch button, "B" by default) while sprinting slides you a few metres in the direction you were running, at the game's crouch height; the sprint speed lines stay on. Afterwards you stand up again (a button slide stays crouched if the button is still held). Sprinting is not possible while crouched. Crouching while walking is unchanged.
 5. **Arm-swing sprint** – swinging both arms like a runner while moving with the stick starts the sprint (clicking the stick still works); stop swinging and you walk again. Ducking right after swinging still slides.
-6. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
+6. **Sprint speed** – configurable multiplier for the game's sprint speed.
+7. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 
 ## Install & play
 
@@ -46,7 +47,8 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`. While pl
 | `Slide.CrouchDownMs` | Time to get fully crouched when a slide starts (the game takes ~870 ms; 0 = game speed) |
 | `Slide.KeepSprintLines`, `NoSprintWhileCrouched`, `HapticAmplitude` | Speed lines while sliding, sprint lock while crouched, slide rumble |
 | `ArmSprint.MinHandSpeed`, `MaxCorrelation` | How fast each hand must swing (cm/s) and how opposite the hands must move (-1 = perfectly opposite) |
-| `ArmSprint.StartMs`, `StopMs`, `MinStick` | Swing time to start, still time to walk again, stick deflection needed |
+| `ArmSprint.StartMs`, `StillMs`, `StopMs`, `MinStick` | Swing time to start; a hand stopped this long, or no running swing this long, walks again; stick deflection needed |
+| `Sprint.SpeedMultiplier` | Sprint speed (1.0 = original); the slide gets faster too, up to `Slide.MaxSpeed` |
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
 | `Debug` | Writes details to `ue4ss\Mods\ReachTweaks\ReachTweaks.log` |
 
@@ -64,6 +66,7 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/guns.lua        firearm haptics
   Scripts/slide.lua       sprint slide
   Scripts/armsprint.lua   arm-swing sprint
+  Scripts/sprint.lua      sprint speed
   Scripts/keys.lua        keyboard shortcuts (polled on the game thread)
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
@@ -91,7 +94,8 @@ Key findings:
 - Thrusters: `AddLinearThruster(FAtlasMovementThrusterLinear)` gives `Direction * Strength` (× `StrengthOverTime` curve over `Duration` if set); non-additive thrusters replace the movement velocity (summed if several), additive ones add to it; expired ones are removed after each movement update; `HasActiveOverrideThrusters` tells whether one is running.
 - Sprint slide (`slide.lua`): chains short non-additive thrusters (only when none is active); keeps the lines by writing `bIsSprinting` directly (no `OnSprintStarted`, which would uncrouch); a head slide calls `StartButtonCrouch`, then `StopButtonCrouch` + `TryUncrouch` (+ `UnCrouch`) at the end; drives `Crouch Height` down faster; the crouch lock holds `bIsSprinting` on with walk `Speed` so the sprint input cannot start a sprint. The standing head height is learnt from the measured head height (the game's calibration offset did not match it after a level change); moves over 3 m in one tick are treated as teleports.
 - Sprint input: native `OnSprintInput` (bound to `SprintInput`): a non-zero value calls the `StartSprint` logic; a zero value calls `StopSprint` only when `bToggleSprint` (+0x314) is false. `UAtlasMovementComponent` has `LeftMotionController`, `RightMotionController` and `Headset` object properties, and `GetForwardInput` / `GetRightInput` return the stick axes.
-- Arm-swing sprint (`armsprint.lua`): per hand, swing = height + forward distance relative to the head; smoothed velocities, windowed RMS per hand and left/right correlation (running = both fast and negatively correlated). Calls `StartSprint` / `StopSprint`, ends only sprints it started, and does nothing while `Slide.HoldsSprint()` (slide or crouch lock).
+- Sprint speed (`sprint.lua`): `RunSpeed` (+0x310, float) is what `StartSprint` copies into `Speed` (+0x31c); `WalkSpeed` is +0x30c. The Blueprint also has `SetRunSpeed` / `SetWalkSpeed` / `SetSpeed` / `GetSpeeds`, so a `RunSpeed` not written by the mod is taken as the game's new value and scaled again; a running sprint gets the new speed at once. Game values (2026-10-10): `RunSpeed` 490 cm/s, `WalkSpeed` 300 cm/s.
+- Arm-swing sprint (`armsprint.lua`): per hand, swing = height + forward distance relative to the head; smoothed velocities, windowed RMS per hand (400 ms) and left/right correlation (running = both fast and negatively correlated). Stopping uses a separate 150 ms window per hand: the 400 ms RMS took ~0.9 s (+ `StopMs`) to fall below the threshold after the hands stopped; the short window falls in ~0.35 s, while a swinging hand stays above ~80 % of its RMS at the turning points. A stopped hand also blocks the start (otherwise the 400 ms window, still above the threshold, turned the gesture back on every tick). Calls `StartSprint` / `StopSprint`, ends only sprints it started, and does nothing while `Slide.HoldsSprint()` (slide or crouch lock).
   Measured in VR (2026-10-10): running arm swing ~220–320 cm/s per hand with correlation -0.65 to -0.9; ordinary hand movement stays below ~100 cm/s or near 0 / positive correlation, so the defaults (80 cm/s, -0.3, start 200 ms) leave a wide margin. Ducking into a slide flips the correlation positive, and the sprint is handed to the slide (`sprint handed to the slide` in the log) before the gesture ends.
 - Dead ends (no effect, the resolvers run with `MovementMethod = NoPhysics`): `ObjectPosition/RotationHeaviness`, `MagicNumber_*`, `ResolverLinear/AngularStiffness`, recoil springs, `ND.HandGrab.*` lerp settings.
 - UE4SS quirks: `K2_GetComponentsByClass` fails (use `FindAllOf` + owner); `FindAllOf` is exact-class only; pawn hand properties are `NDComponentPath` structs (use the `...Reference` properties); never keep UObjects across ticks; never run Lua off the game thread: `RegisterKeyBind` and `ExecuteWithDelay` callbacks run on UE4SS threads and crashed the game inside UE4SS (keys are polled with `IsInputKeyDown`, delays use `Util.After`).
