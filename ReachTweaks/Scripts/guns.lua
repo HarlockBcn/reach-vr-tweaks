@@ -59,10 +59,12 @@ local function onFire(gun)
         dur = dur * 0.7
     end
 
+    local kickMs = cfg.FireKickMs or 40
+    local tail = cfg.FireTailAmplitude or 0.9
     for i, h in ipairs(hands) do
         local a = (i == 1) and amp or amp * cfg.OtherHandFactor
-        Haptics.Pulse(h, a, 22, a * 0.8, 1.0)          -- sharp kick
-        Haptics.Pulse(h, a * 0.7, dur, 0.0, 0.6)        -- recoil fading out
+        Haptics.Pulse(h, a, kickMs, a, 1.0)             -- sharp kick at full strength
+        Haptics.Pulse(h, a * tail, dur, 0.0, 0.8)       -- recoil fading out
     end
     Util.DLog("Shot: %s (hands %d)", gun:GetFullName(), #hands)
 end

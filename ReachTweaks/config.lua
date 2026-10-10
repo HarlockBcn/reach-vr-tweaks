@@ -62,10 +62,12 @@ return {
     -- --------------------------------------------------------
     Guns = {
         Enabled = true,
-        FireAmplitude = 1.0,         -- initial kick of each shot
-        FireDurationMs = 70,         -- total recoil duration
+        FireAmplitude = 1.0,         -- kick strength of each shot (max 1.0)
+        FireKickMs = 40,             -- duration of the full-strength kick
+        FireTailAmplitude = 0.9,     -- strength of the fading recoil tail (share of the kick)
+        FireDurationMs = 120,        -- duration of the fading recoil tail
         AutomaticFactor = 0.75,      -- automatic weapons: slightly weaker, shorter kick
-        OtherHandFactor = 0.5,       -- supporting hand when held with two hands
+        OtherHandFactor = 0.7,       -- supporting hand when held with two hands
         -- Multiplies the game's original weapon vibrations (1 = unchanged)
         NativeHapticScale = 1.5,
     },
