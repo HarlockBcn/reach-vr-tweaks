@@ -27,6 +27,14 @@
 -- is ignored. Landing from a height dips the head relative to the feet (the
 -- game smooths the head down after the feet hit the floor), which looked like
 -- a quick duck and started a slide.
+-- Crouch button on landing (pressed in the air or within LandingWindowMs of
+-- landing, while sprinting): the game ignores the press in the air, and the
+-- sprint restarted on landing (jumpsprint.lua, "On Sprint Started") stands the
+-- player up again, so the mod crouches itself (Slide.LandingCrouch):
+--  * "slide": a normal crouched slide;
+--  * "stop":  no slide; the player crouches and the sprint ends.
+-- Any slide re-crouches if the game stood the player up (a sprint started in
+-- the same tick as the press), otherwise it slid standing.
 local Util = require("util")
 local Player = require("player")
 local Haptics = require("haptics")
@@ -61,6 +69,9 @@ local physCrouched = false
 local lastButtonCrouch = false
 local buttonCrouchChangedAt = -10
 local lastAirAt = -10            -- last tick spent off the ground (clock, s)
+local takeoffAt = -10            -- clock when the player last left the ground
+local airborne = false           -- off the ground on the last tick
+local landCrouchMs = 0           -- "stop" landing crouch: time left to keep the crouch
 local landMinH = nil             -- lowest head height while settling after a landing (debug)
 
 -- Crouch button
@@ -70,7 +81,11 @@ local hookRetryMs = 0
 local fullSearchDone = false
 local lastButtonEvent = -10      -- clock of the last IA_Crouch event
 local buttonPressAt = nil        -- clock of a press not yet consumed
+local pressInAir = false         -- that press came while airborne
+local pressNearLanding = false   -- ...or while airborne / just after landing
 local crouchKeys = nil           -- key names mapped to IA_Crouch
+local crouchFrom = nil           -- "Crouch Height" when the fast crouch started
+local recrouchLogged = false
 
 local function movement(pawn)
     return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
@@ -241,6 +256,7 @@ local function startSlide(mc, speed, h, peak, button)
     dirX, dirY = velX / speed, velY / speed
     startSpeed = math.min(speed * cfg.SpeedBoost, cfg.MaxSpeed)
     crouchFrom = nil
+    recrouchLogged = false
     -- Head slide: crouch at the game's crouch height
     weCrouched = false
     if not button and not readBool(mc, "bButtonCrouch") then
@@ -258,7 +274,6 @@ end
 -- The game crouches by easing its "Crouch Height" variable from ~90 down to
 -- ButtonCrouchHeight (~50) in ~870 ms, which lowers the whole player. During
 -- a slide it is driven down faster: the full crouch takes CrouchDownMs.
-local crouchFrom = nil
 local function fastCrouch(mc, dtMs)
     if cfg.CrouchDownMs <= 0 or not readBool(mc, "bButtonCrouch") then return end
     local cur, target = readNum(mc, "Crouch Height"), readNum(mc, "ButtonCrouchHeight")
@@ -293,6 +308,8 @@ end
 local function onCrouchEvent(name)
     if clock - lastButtonEvent > 0.25 then
         buttonPressAt = clock
+        pressInAir = airborne
+        pressNearLanding = airborne or clock - lastAirAt <= cfg.LandingWindowMs / 1000
         if sliding then pressedDuringSlide = true end
         Util.DLog("[slide] crouch button (%s)", name)
     end
@@ -368,6 +385,7 @@ function Slide.Tick(dtMs)
         -- Level change or death: drop any slide in progress
         if sliding then stopSlide(nil, "pawn lost") end
         sprintHeld, locked = false, false
+        landCrouchMs = 0
         lastPos = nil
         return
     end
@@ -419,7 +437,11 @@ function Slide.Tick(dtMs)
     end
     -- While the game crouches or stands up, the head height is not the
     -- player's real one: ignore it for a moment.
-    if onGround == false then lastAirAt = clock end
+    if onGround == false then
+        if not airborne then takeoffAt = clock end
+        lastAirAt = clock
+    end
+    airborne = onGround == false
     local landing = clock - lastAirAt <= cfg.LandSettleMs / 1000
     if Util.Debug then
         -- Size of the landing dip (helps tune LandSettleMs)
@@ -469,6 +491,17 @@ function Slide.Tick(dtMs)
         elseif airMs >= 100 then
             stopSlide(mc, "airborne")
         else
+            -- The game stood the player up (sprint started with the press,
+            -- or a press in the air): crouch again, unless the player
+            -- pressed the button to stand up
+            if not buttonCrouch and not pressedDuringSlide then
+                call(mc, "StartButtonCrouch")
+                if not byButton then weCrouched = true end
+                if not recrouchLogged then
+                    recrouchLogged = true
+                    Util.DLog("[slide] not crouched by the game; crouching")
+                end
+            end
             thrust(mc, target)
             fastCrouch(mc, dtMs)
             -- Light rumble of the ground, fading with the speed
@@ -480,14 +513,46 @@ function Slide.Tick(dtMs)
         return
     end
 
+    -- "stop" landing crouch: keep the player crouched for a moment (the
+    -- sprint restarted on landing stands them up)
+    if landCrouchMs > 0 then
+        landCrouchMs = landCrouchMs - dtMs
+        if buttonPressAt and clock - buttonPressAt < 0.05 then
+            landCrouchMs = 0     -- pressed again: the game stands up
+            buttonPressAt = nil
+        else
+            if not buttonCrouch then call(mc, "StartButtonCrouch") end
+            fastCrouch(mc, dtMs)
+            locked = true
+            holdSprint(mc, true, true)
+            return
+        end
+    end
+
     local peak = peakHeight()
     if heightSettled then pushHistory(h) else history = {} end
-    local pressed = buttonPressAt ~= nil and clock - buttonPressAt <= 0.15
+    -- A press in the air waits for the landing
+    local pressed = buttonPressAt ~= nil and (clock - buttonPressAt <= 0.15
+        or (pressInAir and (onGround == false or clock - lastAirAt <= 0.15)))
     if not pressed then buttonPressAt = nil end
+    local landingPress = pressed and pressNearLanding and cfg.Trigger ~= "head"
 
     -- Slide: sprinting (the game may end the sprint as soon as it crouches,
     -- so allow a short grace) and a crouch button press or a quick duck.
-    local wasSprinting = clock - lastSprintAt <= 0.2
+    -- Around a jump the sprint since the takeoff counts.
+    local wasSprinting = clock - lastSprintAt <= 0.2 or (landingPress and lastSprintAt >= takeoffAt - 0.2)
+
+    if landingPress and cfg.LandingCrouch == "stop" and wasSprinting and onGround then
+        buttonPressAt = nil
+        landCrouchMs = 400
+        crouchFrom = nil
+        if not buttonCrouch then call(mc, "StartButtonCrouch") end
+        locked = true
+        holdSprint(mc, true, true)
+        Util.DLog("[slide] crouch on landing: crouching and stopping the sprint (speed %.0f cm/s)", speed)
+        return
+    end
+
     if cooldown <= 0 and wasSprinting and onGround and speed >= cfg.MinSpeed then
         local button = pressed and cfg.Trigger ~= "head"
         local ducked = heightSettled and peak ~= nil and peak - h >= cfg.CrouchDropCm and cfg.Trigger ~= "button"
@@ -524,6 +589,7 @@ function Slide.Stop()
     if sliding then stopSlide(mc, "disabled") end
     if mc then holdSprint(mc, false) end
     sprintHeld, locked, physCrouched = false, false, false
+    landCrouchMs = 0
     standRef, history, lastPos, buttonPressAt = nil, {}, nil, nil
     velX, velY = 0, 0
 end
@@ -535,6 +601,8 @@ function Slide.Init(config)
     cfg.CrouchWindowMs = cfg.CrouchWindowMs or 250
     cfg.CrouchSettleMs = cfg.CrouchSettleMs or 1000
     cfg.LandSettleMs = cfg.LandSettleMs or 500
+    cfg.LandingCrouch = cfg.LandingCrouch == "stop" and "stop" or "slide"
+    cfg.LandingWindowMs = cfg.LandingWindowMs or 300
     cfg.MinSpeed = cfg.MinSpeed or 250
     cfg.SpeedBoost = cfg.SpeedBoost or 1.6
     cfg.MaxSpeed = cfg.MaxSpeed or 1600
@@ -546,8 +614,8 @@ function Slide.Init(config)
     cfg.CrouchDownMs = cfg.CrouchDownMs or 300
     if cfg.KeepSprintLines == nil then cfg.KeepSprintLines = true end
     if cfg.NoSprintWhileCrouched == nil then cfg.NoSprintWhileCrouched = true end
-    Util.Log("Slide enabled (trigger=%s, drop=%.0f cm in %d ms, min speed=%.0f cm/s, %d ms)",
-        cfg.Trigger, cfg.CrouchDropCm, cfg.CrouchWindowMs, cfg.MinSpeed, cfg.DurationMs)
+    Util.Log("Slide enabled (trigger=%s, drop=%.0f cm in %d ms, min speed=%.0f cm/s, %d ms, landing crouch=%s)",
+        cfg.Trigger, cfg.CrouchDropCm, cfg.CrouchWindowMs, cfg.MinSpeed, cfg.DurationMs, cfg.LandingCrouch)
 end
 
 return Slide

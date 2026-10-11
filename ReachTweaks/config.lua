@@ -113,6 +113,12 @@ return {
         HapticAmplitude = 0.3,   -- light rumble while sliding (0 = off)
         CooldownMs = 600,        -- minimum time between slides
         LandSettleMs = 500,      -- after landing, head ducks are ignored this long (landing from a height dips the head)
+        -- Crouch button while landing from a sprint jump (pressed in the air
+        -- or right after touching the ground):
+        -- "slide" = crouched slide, like a normal slide
+        -- "stop"  = crouch and stop running (no slide)
+        LandingCrouch = "slide",
+        LandingWindowMs = 300,   -- a press this long after landing still counts as "while landing"
         ThrusterStepMs = 30,     -- internal: length of each movement push
     },
 
@@ -146,7 +152,7 @@ return {
     -- --------------------------------------------------------
     Sprint = {
         Enabled = true,
-        SpeedMultiplier = 1.2,   -- 1.0 = original; 1.5 = 50 % faster
+        SpeedMultiplier = 1.0,   -- 1.0 = original; 1.5 = 50 % faster
     },
 
     -- --------------------------------------------------------
