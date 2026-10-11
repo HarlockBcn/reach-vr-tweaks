@@ -193,4 +193,25 @@ return {
         LineOfSightMarginCm = 100,  -- the sight check stops this short of the target (its own ledge/wall does not hide it)
         SettleMs = 100,             -- internal: wait after pressing grip until the game has picked the new target
     },
+
+    -- --------------------------------------------------------
+    -- 10) SHIELD THROW SPEED
+    -- Makes the thrown shield faster. The game already throws it at
+    -- ~2000-2800 cm/s; ThrowSpeedMultiplier is what changes it most.
+    -- With Debug = true the log shows [shield] (game speed, swing
+    -- peak and final speed of each throw, speed during the flight,
+    -- bounces). Speeds in cm/s (1000 = 10 m/s).
+    -- --------------------------------------------------------
+    Shield = {
+        Enabled = true,
+        ThrowSpeedMultiplier = 1.75, -- multiplier on the game's throw speed (1.0 = original)
+        MinThrowSpeed = 1000,        -- a thrown shield leaves at least this fast (0 = off)
+        -- Use the fastest speed of the swing when it beats the game's speed
+        -- (measured in game it is lower, ~650-760 cm/s, so it rarely changes anything)
+        UsePeakSpeed = true,
+        PeakWindowMs = 150,          -- ...looking back this long before letting go
+        -- Undo small slowdowns in flight (measured in game the shield only
+        -- loses speed on bounces, so this rarely changes anything)
+        KeepSpeed = false,
+    },
 }
