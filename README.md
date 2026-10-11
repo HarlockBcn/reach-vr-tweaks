@@ -91,10 +91,12 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/keys.lua        keyboard shortcuts (polled on the game thread)
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
+  Scripts/util.lua        shared helpers (logging, safe calls, cached component lookup, timers)
   Scripts/intro.lua       fast startup
   Scripts/spawner.lua, experiments.lua, notify.lua    test tools (F5/F6/F8, VR text)
   Scripts/diag.lua, lagprobe.lua                      debug diagnostics
 CHANGELOG.md                                       changes per version (shipped in every release)
+CLAUDE.md                                          working rules for Claude (not shipped)
 tools/release.ps1                                  release builder (version bump, tag, zip)
 tools/*.py                                         reverse-engineering helpers (Python)
 ```
