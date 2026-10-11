@@ -9,7 +9,8 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 5. **Arm-swing sprint** – swinging both arms like a runner while moving with the stick starts the sprint (clicking the stick still works); stop swinging and you walk again. Ducking right after swinging still slides. Not while climbing (a hand holding a climbable surface).
 6. **Sprint speed** – configurable multiplier for the game's sprint speed.
 7. **Sprint through jumps** – the game ends the sprint when you jump or land; the mod keeps sprinting through the jump (running speed and speed lines in the air) and after landing while the stick is still pushed, with the stick click or the arm swing.
-8. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
+8. **Grapple only in view** – the grapple drone (hook) only latches onto a bar, ledge or object you can see: pressing grip with the hand pointing behind you (e.g. over the shoulder) or at a target outside the headset view does nothing (optional, `GrappleView`).
+9. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 
 ## Install & play
 
@@ -56,6 +57,9 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`. While pl
 | `Sprint.SpeedMultiplier` | Sprint speed (1.0 = original); the slide gets faster too, up to `Slide.MaxSpeed` |
 | `JumpSprint.KeepInAir`, `MinStick` | Keep sprinting in the air; stick deflection needed on landing to keep sprinting |
 | `JumpSprint.LandGraceMs`, `ResumeWindowMs` | Time after landing for the arm swing to start again; stick released this long after landing = no sprint |
+| `GrappleView.Enabled`, `ViewAngle` | Grapple only at targets within this angle of where you look (degrees) |
+| `GrappleView.HandAimAngle` | A hand pointing further than this from where you look is blocked at once (degrees) |
+| `GrappleView.RequireLineOfSight`, `LineOfSightMarginCm` | Also require a clear line from the eyes to the target (off by default: bars mounted on walls counted as hidden) |
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
 | `Debug` | Writes details to `ue4ss\Mods\ReachTweaks\ReachTweaks.log` |
 
@@ -75,6 +79,7 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/armsprint.lua   arm-swing sprint
   Scripts/sprint.lua      sprint speed
   Scripts/jumpsprint.lua  sprint through jumps
+  Scripts/grapple.lua     grapple only in view
   Scripts/keys.lua        keyboard shortcuts (polled on the game thread)
   Scripts/haptics.lua     per-hand vibration mixer (SetHapticsByValue)
   Scripts/player.lua      player / held-object tracking
@@ -109,6 +114,7 @@ Key findings:
 - Slide braking (v1.10.0): `CalculateMovementInputVector()` (native, no parameters) returns the world-space stick direction, `HeadInput()` or `HandInput()` according to `UAtlasUserSettings::GetMovementInputType`; the deflection comes from `GetForwardInput` / `GetRightInput`. Within ~60° of straight back the slide loses `BrakeDecel` × deflection per second (`[slide] braking`, `end (braked)`).
 - Climbing: `UAtlasMovementComponent::CustomMovementModes` (map) holds the movement mode objects; the climbing one derives from `UAtlasMovementModeClimbingBase`, whose `IsEitherHandClimbing()` / `IsHandClimbing(HandCoupler)` tell whether a hand is attached to a climbable surface (`HandAttachTransforms` keyed by coupler). `armsprint.lua` checks `IsEitherHandClimbing` on every mode each tick (`[armsprint] climbing: no sprint`; with Debug the mode classes are logged once).
 - Jumps: the native code never calls `StopSprint` (only `execStopSprint`, i.e. Blueprint); the movement Blueprint ends the sprint around jumps (`[armsprint] sprint ended by the game` with the stick held and the arms swinging). `GetTimeSinceJump` = world time − `LastJumpTime` (+0x480), in seconds; `bOnGround` is the ground flag. `jumpsprint.lua` treats a sprint that ends in the air, within 300 ms of the jump or 400 ms of landing as ended by the jump: it calls `StartSprint` once in the air and again on landing if the stick is pushed (at most 3 restarts per jump). `armsprint.lua` keeps its sprint while `JumpSprint.Holds()`.
+- Grapple (v1.11.0): the native `UAtlasGrapplingArmComponent` (AtlasGameplay, with `TryGrapple` / `FindGrappleableCoupler` in the PDB) is NOT used in game – only its class default exists. The grapple is the Blueprint component `BP_AtlasGrapplingArm_C` (left hand) / `BP_AtlasGrapplingArm_R_C` (right) on `BP_AtlasPlayer_C`, added by the `AtlasBPGrapplingArmFeature` game feature (not a subclass of the native class; found with `FindAllOf` on the BP names). Its variables: `GrabPressed`, `ActiveGrappleTargetActor` / `ActiveGrappleTargetComponent` / `ActiveGrappleTargetLocation`, `ReachDistance` (1200), `Minimum Reach Distance` (150), `MinReachRadius` (45), `ReachInterval` (0.033 s), `HandCoupleTimer` / `HandCouplerTimerMax` (8; already 8 when a target is found, not the trigger), `ActiveHandCoupler` (NDNTCouplerHand_Left/Right). On grapple the hand couples to the target's `NDNTShapedCoupler` (e.g. `BP_GrapplePoint_Cylinder_C`) and the movement mode becomes `BP_MovementMode_Grapple_C`. The Blueprint keeps the last target after grip is released and only searches while grip is held. `grapple.lua` blocks by setting `ReachDistance` to 1 cm while grip is held and the hand (motion controller forward) points more than `HandAimAngle` from the headset direction, or (after `SettleMs`, once the target is refreshed) the target is more than `ViewAngle` away; a target-blocked press unblocks when that frozen target comes into view; grip released / F7 OFF restores the reach. Pitfalls: judging the stale target or keeping the reach blocked without grip deadlocked the grapple; `PlayerCameraManager:GetCameraRotation` was not readable here (the headset component pose is used); reading every property of the BP component (dump) crashed the game (after `DroneSystem`, a SoftObjectProperty).
 - Dead ends (no effect, the resolvers run with `MovementMethod = NoPhysics`): `ObjectPosition/RotationHeaviness`, `MagicNumber_*`, `ResolverLinear/AngularStiffness`, recoil springs, `ND.HandGrab.*` lerp settings.
 - UE4SS quirks: `K2_GetComponentsByClass` fails (use `FindAllOf` + owner); `FindAllOf` is exact-class only; pawn hand properties are `NDComponentPath` structs (use the `...Reference` properties); never keep UObjects across ticks; never run Lua off the game thread: `RegisterKeyBind` and `ExecuteWithDelay` callbacks run on UE4SS threads and crashed the game inside UE4SS (keys are polled with `IsInputKeyDown`, delays use `Util.After`).
 

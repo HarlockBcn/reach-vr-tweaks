@@ -1,5 +1,5 @@
--- ReachTweaks: agile hands with weapons, better bow and firearm haptics, sprint slide, arm-swing sprint, sprint speed, sprint through jumps.
-local VERSION = "1.10.0"
+-- ReachTweaks: agile hands with weapons, better bow and firearm haptics, sprint slide, arm-swing sprint, sprint speed, sprint through jumps, grapple only in view.
+local VERSION = "1.11.0"
 
 local Util = require("util")
 
@@ -100,6 +100,7 @@ local Slide = require("slide")
 local ArmSprint = require("armsprint")
 local Sprint = require("sprint")
 local JumpSprint = require("jumpsprint")
+local Grapple = require("grapple")
 local Keys = require("keys")
 
 Player.Init()
@@ -116,6 +117,8 @@ local sprintOn = config.Sprint ~= nil and config.Sprint.Enabled == true
 if sprintOn then Sprint.Init(config.Sprint) end
 local jumpSprintOn = config.JumpSprint ~= nil and config.JumpSprint.Enabled == true
 if jumpSprintOn then JumpSprint.Init(config.JumpSprint) end
+local grappleOn = config.GrappleView ~= nil and config.GrappleView.Enabled == true
+if grappleOn then Grapple.Init(config.GrappleView) end
 Intro.Init(config.Intro or {})
 local Experiments = nil
 if config.TestGuns then
@@ -152,6 +155,7 @@ local function reloadConfig()
     if armSprintOn then ArmSprint.Init(config.ArmSprint) end
     if sprintOn then Sprint.Init(config.Sprint) end
     if jumpSprintOn then JumpSprint.Init(config.JumpSprint) end
+    if grappleOn then Grapple.Init(config.GrappleView) end
     Util.Log("Config reloaded from %s", tostring(configPath))
     return true
 end
@@ -181,6 +185,7 @@ local function setActive(on)
         if sprintOn then Util.SafeCall(Sprint.Stop) end
         if jumpSprintOn then Util.SafeCall(JumpSprint.Stop) end
         if slideOn then Util.SafeCall(Slide.Stop) end
+        if grappleOn then Util.SafeCall(Grapple.Stop) end
         Notify.Show("ReachTweaks: OFF", { R = 255, G = 90, B = 80 })
         -- one long buzz
         for h = 0, 1 do Haptics.Pulse(h, 0.6, 350, 0.6, 0.3, true) end
@@ -267,6 +272,7 @@ local function tick()
     -- Arm sprint first: the slide sees a sprint it started in the same tick
     if active and armSprintOn then step("ArmSprint.Tick", ArmSprint.Tick, dt) end
     if active and slideOn then step("Slide.Tick", Slide.Tick, dt) end
+    if active and grappleOn then step("Grapple.Tick", Grapple.Tick, dt) end
     step("Haptics.Tick", Haptics.Tick, dt, pc)
 end
 
@@ -293,6 +299,6 @@ else
     end)
 end
 
-Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s slide=%s armsprint=%s sprint=%s jumpsprint=%s debug=%s loop=%s)", VERSION,
+Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s slide=%s armsprint=%s sprint=%s jumpsprint=%s grapple=%s debug=%s loop=%s)", VERSION,
     tostring(config.Hands.Enabled), tostring(config.Bow.Enabled), tostring(bowBodyOn),
-    tostring(config.Guns.Enabled), tostring(slideOn), tostring(armSprintOn), tostring(sprintOn), tostring(jumpSprintOn), tostring(Util.Debug), loopKind)
+    tostring(config.Guns.Enabled), tostring(slideOn), tostring(armSprintOn), tostring(sprintOn), tostring(jumpSprintOn), tostring(grappleOn), tostring(Util.Debug), loopKind)

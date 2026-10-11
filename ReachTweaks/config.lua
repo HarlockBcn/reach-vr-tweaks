@@ -177,4 +177,20 @@ return {
         JumpWindowMs = 300,      -- internal: a sprint ended this soon after the jump counts as ended by the jump
         MaxRestarts = 3,         -- internal: restarts per jump if the game keeps ending the sprint
     },
+
+    -- --------------------------------------------------------
+    -- 9) GRAPPLE ONLY IN VIEW
+    -- The grapple drone (hook) only fires at a target you can see:
+    -- pointing the hand at a ledge, pole, shield or weapon behind
+    -- you or hidden behind a wall does nothing. With Debug = true
+    -- the log shows [grapple] (target in view / BLOCKED and why).
+    -- --------------------------------------------------------
+    GrappleView = {
+        Enabled = true,
+        ViewAngle = 60,             -- max angle between where you look and the target (degrees)
+        HandAimAngle = 90,          -- hand pointing further than this from where you look = blocked at once
+        RequireLineOfSight = false, -- also blocked when something hides the target from your eyes (may block bars mounted on walls)
+        LineOfSightMarginCm = 100,  -- the sight check stops this short of the target (its own ledge/wall does not hide it)
+        SettleMs = 100,             -- internal: wait after pressing grip until the game has picked the new target
+    },
 }
