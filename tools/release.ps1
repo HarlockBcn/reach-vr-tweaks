@@ -36,7 +36,7 @@ $Utf8      = New-Object Text.UTF8Encoding($false)
 function Info($m) { Write-Host "[release] $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "[release] $m" -ForegroundColor Green }
 
-function Git {
+function Invoke-Git {
     # Continue: git writes warnings to stderr, which 'Stop' would turn into errors
     $ErrorActionPreference = 'Continue'
     $out = & git -C $Root @args 2>&1
@@ -78,10 +78,10 @@ function Get-ChangelogSection($text, $name) {
 }
 
 function New-Release($cur, $new) {
-    $dirty = Git status --porcelain --untracked-files=no
+    $dirty = Invoke-Git status --porcelain --untracked-files=no
     $dirty = @($dirty | Where-Object { $_ -and $_ -notmatch '\sCHANGELOG\.md$' })
     if ($dirty.Count) { throw "Commit or discard these changes first:`n$($dirty -join "`n")" }
-    if (Git tag --list "v$new") { throw "Tag v$new already exists" }
+    if (Invoke-Git tag --list "v$new") { throw "Tag v$new already exists" }
 
     $log = [IO.File]::ReadAllText($Changelog)
     $notes = Get-ChangelogSection $log 'Unreleased'
@@ -95,15 +95,15 @@ function New-Release($cur, $new) {
     $lua = $lua -replace 'local VERSION = "\d+\.\d+\.\d+"', "local VERSION = `"$new`""
     [IO.File]::WriteAllText($MainLua, $lua, $Utf8)
 
-    Git add -- $Changelog $MainLua | Out-Null
-    Git commit -q -m "Release v$new" -m $notes | Out-Null
-    Git tag -a "v$new" -m "ReachTweaks v$new" -m $notes | Out-Null
+    Invoke-Git add -- $Changelog $MainLua | Out-Null
+    Invoke-Git commit -q -m "Release v$new" -m $notes | Out-Null
+    Invoke-Git tag -a "v$new" -m "ReachTweaks v$new" -m $notes | Out-Null
     Ok "Version $cur -> $new, committed and tagged v$new"
 }
 
 function Build-Zip($ver) {
     $tag = "v$ver"
-    if (-not (Git tag --list $tag)) { throw "Tag $tag not found. Create the release with -Bump or -Version." }
+    if (-not (Invoke-Git tag --list $tag)) { throw "Tag $tag not found. Create the release with -Bump or -Version." }
     $paths = @($Payload | Where-Object { Test-GitPath $tag $_ })
 
     New-Item -ItemType Directory -Force $Dist | Out-Null
@@ -114,7 +114,7 @@ function Build-Zip($ver) {
     New-Item -ItemType Directory -Force $stage | Out-Null
     try {
         # git applies .gitattributes (CRLF for .bat/.ps1) when exporting
-        Git archive --format=zip -o $raw $tag -- @paths | Out-Null
+        Invoke-Git archive --format=zip -o $raw $tag -- @paths | Out-Null
         Expand-Archive -Path $raw -DestinationPath $stage -Force
         Remove-Item $raw
 
@@ -131,12 +131,24 @@ function Build-Zip($ver) {
         # Timestamps = build time: the launcher copies the installed config.lua
         # back over the package one only when the installed one is newer
         $now = Get-Date
-        Get-ChildItem $stage -Recurse -File | ForEach-Object { $_.LastWriteTime = $now }
+        $files = Get-ChildItem $stage -Recurse -File
+        $files | ForEach-Object { $_.LastWriteTime = $now }
 
+        # Entries written one by one: ZipFile.CreateFromDirectory on .NET Framework
+        # stores "\" in the paths, which some unzip tools do not understand
         $zip = Join-Path $Dist "$name.zip"
         if (Test-Path $zip) { Remove-Item $zip -Force }
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+        Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+        $archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($f in $files) {
+                $entry = 'ReachTweaks/' + $f.FullName.Substring($stage.Length + 1).Replace('\', '/')
+                [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $f.FullName, $entry,
+                    [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+            }
+        } finally {
+            $archive.Dispose()
+        }
     } finally {
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -144,7 +156,7 @@ function Build-Zip($ver) {
     # This version's notes alone, ready to paste on a download page
     $notes = $null
     if (Test-GitPath $tag 'CHANGELOG.md') {
-        $notes = Get-ChangelogSection ((Git show "${tag}:CHANGELOG.md") -join "`n") $ver
+        $notes = Get-ChangelogSection ((Invoke-Git show "${tag}:CHANGELOG.md") -join "`n") $ver
     }
     if ($notes) {
         [IO.File]::WriteAllText((Join-Path $Dist "$name-notes.md"), "# ReachTweaks v$ver`n`n$notes`n", $Utf8)
