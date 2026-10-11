@@ -7,6 +7,14 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+### Changed
+- Performance: no more whole-object-list searches during play. Before, the mod searched every object in the game every frame while holding the bow (string pull), 20 times a second while holding a weapon (agile hands), every frame in the main menu (arm-swing sprint), and every 2-3 s for the shield, the gun haptic data and the grapple. Components are now found once and remembered by path; the shield is found when you grab it.
+- Performance: the pawn and its movement component are read once per frame instead of once per module; held-object refresh (backed by the grab/release hooks), keyboard polling and level checks run less often; the climbing check only queries the climbing movement mode.
+- Debug: `[perf]` lines in the log every 10 s with the mod's time per frame and per module, and how many frames took 2 ms or more.
+
+### Fixed
+- Save time: the fallback search for save slot widgets (the whole object list) ran every 3 s for the entire session instead of only until the save list was seen.
+- `Guns.NativeHapticScale` had no effect (it looked for the wrong data class). It now scales the data of the gun you grab. The default is now 1.0 so the feel does not change; set 1.5 for stronger game vibrations.
 
 ## [1.13.0] - 2026-10-11
 ### Added

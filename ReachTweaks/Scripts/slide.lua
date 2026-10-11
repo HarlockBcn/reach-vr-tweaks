@@ -93,8 +93,9 @@ local crouchKeys = nil           -- key names mapped to IA_Crouch
 local crouchFrom = nil           -- "Crouch Height" when the fast crouch started
 local recrouchLogged = false
 
-local function movement(pawn)
-    return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
+-- Movement component of the current pawn (cached for the tick by Player)
+local function movement()
+    return Player.Movement()
 end
 
 local function readBool(obj, name)
@@ -424,7 +425,7 @@ function Slide.Tick(dtMs)
     clock = clock + dt
     if cooldown > 0 then cooldown = cooldown - dtMs end
 
-    local key = Util.Key(pawn)
+    local key = Player.PawnKey()
     if key ~= hookSearchKey then
         -- New pawn (level change, respawn): forget the old body measurements
         standRef, history, physCrouched, lastPos = nil, {}, false, nil

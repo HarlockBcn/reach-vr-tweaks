@@ -39,7 +39,7 @@ end
 local function motionResolver(actor)
     local r = Util.Prop(actor, "BowResolverRef")
     if r then return r end
-    return Util.FindOwnedBy(actor, { "AtlasGunResolver", "AtlasThrowableResolver" })[1]
+    return Util.FindOwnedByCached(actor, { "AtlasGunResolver", "AtlasThrowableResolver" })[1]
 end
 
 -- Samples the resolver motion of this tick: Weighting is the TLerp alpha used by

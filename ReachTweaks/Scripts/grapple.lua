@@ -37,6 +37,9 @@ local BLOCKED_REACH = 1.0        -- cm
 local cfg
 local paths = {}                 -- class name -> component path
 local searchMs = 0
+local searchGap = 1000           -- current wait between searches (grows while missing)
+local searchKey = nil            -- pawn the search schedule belongs to
+local SEARCH_MAX_MS = 30000
 local blocks = {}                -- hand tag -> { path, reach, ms }
 local settle = {}                -- hand tag -> ms before the target is judged
 local warned = {}
@@ -101,9 +104,18 @@ local function components(dtMs)
         end
     end
     if not missing then return out end
+    -- FindAllOf walks the whole object list: search soon after a new pawn
+    -- (the game feature adds the components a bit later), then less and less
+    -- often while one is still missing (menu pawn, grapple not unlocked yet,
+    -- only one hand has it)
+    local key = Player.PawnKey()
+    if key ~= searchKey then
+        searchKey, searchMs, searchGap = key, 1000, 1000
+    end
     searchMs = searchMs - dtMs
     if searchMs > 0 then return out end
-    searchMs = 3000
+    searchGap = math.min(searchGap * 2, SEARCH_MAX_MS)
+    searchMs = searchGap
     for i, cn in ipairs(CLASS_NAMES) do
         if not paths[cn] then
             for _, c in ipairs(FindAllOf(cn) or {}) do
@@ -122,7 +134,7 @@ end
 local function movement()
     local pawn = Player.GetPawn()
     if not pawn then return nil, nil end
-    return pawn, Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
+    return pawn, Player.Movement()
 end
 
 local function unit(v)
@@ -270,7 +282,7 @@ end
 -- a hand pointing far from the view (HandAimAngle) is blocked at once; a
 -- target blocked for being out of view stays frozen (no new search) and is
 -- unblocked as soon as the player turns to see it.
-local function tickComponent(c, dtMs, eye, fwd)
+local function tickComponent(c, dtMs, view)
     local comp, tag = c.comp, c.tag
     local grab = readProp(comp, "GrabPressed") == true
     settle[tag] = settle[tag] or 0
@@ -279,6 +291,8 @@ local function tickComponent(c, dtMs, eye, fwd)
         settle[tag] = cfg.SettleMs
         return
     end
+    local eye, fwd = view()
+    if not eye then return end
     local b = blocks[tag]
     local aim = handAimAngle(c.index, fwd)
     if aim and aim > cfg.HandAimAngle then
@@ -314,13 +328,18 @@ end
 function Grapple.Tick(dtMs)
     local list = components(dtMs)
     if #list == 0 then return end
-    local eye, fwd = head()
-    if not eye then
-        warnOnce("head", "[grapple] head position not readable; grapple not restricted")
-        return
+    -- The head pose is only needed while grip is held (read once per tick)
+    local eye, fwd, headRead = nil, nil, false
+    local function view()
+        if not headRead then
+            headRead = true
+            eye, fwd = head()
+            if not eye then warnOnce("head", "[grapple] head position not readable; grapple not restricted") end
+        end
+        return eye, fwd
     end
     for _, c in ipairs(list) do
-        tickComponent(c, dtMs, eye, fwd)
+        tickComponent(c, dtMs, view)
     end
 end
 

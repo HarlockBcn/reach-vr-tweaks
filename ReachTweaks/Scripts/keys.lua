@@ -10,13 +10,21 @@ local Keys = {}
 
 local binds = {}   -- {name, fn, down}
 
+local POLL_MS = 30   -- a key press lasts much longer than this
+local sinceMs = 0
+
 function Keys.Bind(name, fn)
     binds[#binds + 1] = { name = name, fn = fn, down = false }
 end
 
-function Keys.Tick(pc)
+function Keys.Tick(pc, dtMs)
+    sinceMs = sinceMs + (dtMs or POLL_MS)
+    if sinceMs < POLL_MS then return end
+    sinceMs = 0
     for _, b in ipairs(binds) do
-        local ok, down = pcall(function() return pc:IsInputKeyDown({ KeyName = FName(b.name) }) end)
+        -- FKey built once per key (an FName is a plain value, not a UObject)
+        b.key = b.key or { KeyName = FName(b.name) }
+        local ok, down = pcall(function() return pc:IsInputKeyDown(b.key) end)
         down = ok and down == true
         if down and not b.down then Util.SafeCall(b.fn) end
         b.down = down

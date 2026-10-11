@@ -19,8 +19,8 @@
 -- Blueprint class name is not known in advance. Hooks on the native functions
 -- the slot / page Blueprints call (GetLevelDisplayName, GetButtonVisibility,
 -- ...) tell that the save list is in use and which class the slots have; the
--- slots are then scanned for a few seconds. Until a hook has fired, a slow
--- scan with FindObjects (any subclass) is the fallback.
+-- slots are then scanned for a few seconds. If no hook can be registered, a
+-- slow scan with FindObjects (any subclass) is the fallback.
 --
 -- In each slot the text block whose text contains the save's year and day
 -- (and no time yet) gets " HH:MM". No UObject is kept across ticks: text
@@ -45,6 +45,8 @@ local cfg
 local nowMs = 0
 local signalAt = nil         -- last time a hook said the save list is in use
 local hooksSeen = false
+local hooksRegistered = false  -- at least one hook is in place
+local learnedKeys = {}       -- widget key -> true (class already learnt)
 local lastScan = -1e9
 local slotClasses = {}       -- short class name -> true
 local pendingClasses = {}    -- short class name -> class path (hook the BP event)
@@ -285,7 +287,18 @@ function SaveTime.Tick(dtMs)
     nowMs = nowMs + dtMs
     hookPendingEvents()
     local active = signalAt ~= nil and nowMs - signalAt < ACTIVE_MS
-    local interval = active and ACTIVE_SCAN_MS or (hooksSeen and nil or IDLE_SCAN_MS)
+    -- List closed: widgets are destroyed and their addresses may be reused
+    if not active and next(learnedKeys) ~= nil then learnedKeys = {} end
+    -- The slow fallback scan (whole object list) only runs when no hook could
+    -- be registered: a registered hook fires as soon as the save list is used.
+    -- (Written as "x and nil or IDLE_SCAN_MS" before, which is always
+    -- IDLE_SCAN_MS in Lua: the scan ran every 3 s for the whole session.)
+    local interval
+    if active then
+        interval = ACTIVE_SCAN_MS
+    elseif not hooksSeen and not hooksRegistered then
+        interval = IDLE_SCAN_MS
+    end
     if interval == nil or nowMs - lastScan < interval then return end
     lastScan = nowMs
     for _, w in ipairs(findSlots()) do Util.SafeCall(updateSlot, w) end
@@ -314,10 +327,19 @@ function SaveTime.Init(config)
                     hooksSeen = true
                     Util.DLog("[savetime] save list in use (%s)", fn)
                 end
+                -- Called every frame per slot while the list is shown: the
+                -- class is only looked at once per widget
                 local okw, w = pcall(function() return self:get() end)
-                if okw and Util.IsValid(w) then learnClass(w, fn) end
+                if okw and Util.IsValid(w) then
+                    local k = Util.Key(w)
+                    if not learnedKeys[k] then
+                        learnedKeys[k] = true
+                        learnClass(w, fn)
+                    end
+                end
             end)
         end)
+        if ok then hooksRegistered = true end
         Util.DLog("[savetime] hook %s: %s", path, ok and "OK" or tostring(err))
     end
     -- (UAtlasSaveSubsystem:GetSaveSlotDisplayInfos is not found by RegisterHook)
@@ -332,6 +354,7 @@ function SaveTime.Init(config)
                 end
             end)
         end)
+        if ok then hooksRegistered = true end
         Util.DLog("[savetime] hook %s: %s", path, ok and "OK" or tostring(err))
     end
 end

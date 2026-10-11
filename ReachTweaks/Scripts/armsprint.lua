@@ -57,8 +57,9 @@ local climbing = false
 local climbGraceMs = 0           -- time left after letting go of a climbable surface
 local modesLogged = false
 
-local function movement(pawn)
-    return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
+-- Movement component of the current pawn (cached for the tick by Player)
+local function movement()
+    return Player.Movement()
 end
 
 local function readBool(obj, name)
@@ -115,12 +116,26 @@ end
 
 -- True while either hand holds a climbable surface; nil when the climbing
 -- movement mode cannot be read. The modes are looked up every tick (UObjects
--- are never kept across ticks).
-local function handsClimbing(mc)
+-- are never kept across ticks), but IsEitherHandClimbing is only called on
+-- the array slots that answered it in the last full scan: on the other modes
+-- the call fails, and a failed call raises a Lua error every tick. Full scan:
+-- on a new pawn, and every MODE_RESCAN_MS while no mode answered.
+local MODE_RESCAN_MS = 2000
+local climbSlots = nil           -- array indices whose mode answered, or nil = scan
+local rescanMs = 0
+
+local function handsClimbing(mc, dtMs)
+    if climbSlots and next(climbSlots) == nil then
+        rescanMs = rescanMs - dtMs
+        if rescanMs <= 0 then climbSlots = nil end
+    end
+    local scan = climbSlots == nil
+    local slots = scan and {} or climbSlots
     local result = nil
     local names = Util.Debug and not modesLogged and {} or nil
     local ok, err = pcall(function()
-        mc.CustomMovementModes:ForEach(function(_, value)
+        mc.CustomMovementModes:ForEach(function(i, value)
+            if not scan and not slots[i] then return end
             local mode = value:get()
             if names then
                 local okN, n = pcall(function() return mode:GetClass():GetFName():ToString() end)
@@ -129,9 +144,16 @@ local function handsClimbing(mc)
             local okC, v = pcall(function() return mode:IsEitherHandClimbing() end)
             if okC and type(v) == "boolean" then
                 result = result or v
+                if scan then slots[i] = true end
+            elseif not scan then
+                climbSlots = nil   -- the array changed: scan again next tick
             end
         end)
     end)
+    if scan then
+        climbSlots = slots
+        rescanMs = MODE_RESCAN_MS
+    end
     if names then
         modesLogged = true
         Util.DLog("[armsprint] movement modes: %s", ok and table.concat(names, ", ") or tostring(err))
@@ -209,21 +231,21 @@ function ArmSprint.Tick(dtMs)
     local mc = pawn and movement(pawn)
     if not mc then
         ours, lastKey = false, nil
-        climbing, climbGraceMs, modesLogged = false, 0, false
+        climbing, climbGraceMs, modesLogged, climbSlots = false, 0, false, nil
         reset()
         return
     end
-    local key = Util.Key(pawn)
+    local key = Player.PawnKey()
     if key ~= lastKey then
         -- New pawn (level change, respawn)
         lastKey, ours = key, false
-        climbing, climbGraceMs, modesLogged = false, 0, false
+        climbing, climbGraceMs, modesLogged, climbSlots = false, 0, false, nil
         reset()
     end
 
     local dt = dtMs / 1000
     if cfg.BlockWhileClimbing then
-        local c = handsClimbing(mc)
+        local c = handsClimbing(mc, dtMs)
         if c == nil then warnOnce("climb", "[armsprint] climbing state not readable; sprint not blocked while climbing") end
         c = c == true
         if c ~= climbing then

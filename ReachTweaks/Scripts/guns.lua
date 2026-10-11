@@ -18,7 +18,8 @@ local lastFire = {}     -- gunKey -> ms of the last detected shot
 local lastAmmo = {}     -- gunKey -> ammo on the previous tick
 local autoCache = {}    -- gunKey -> bool
 local heldSince = { [0] = { key = nil, t = 0 }, [1] = { key = nil, t = 0 } }
-local scaledData = {}   -- gunDataKey -> true
+local scaledData = {}   -- gun data path -> scale applied
+local checkedGuns = {}  -- gunKey -> true (its data was already handled)
 
 local function isGun(actor)
     for _, cp in ipairs(GUN_CLASSES) do
@@ -78,6 +79,10 @@ function Guns.Tick(dtMs)
             heldSince[hand] = { key = key, t = now }
         end
         if a and isGun(a) then
+            if not checkedGuns[key] then
+                checkedGuns[key] = true
+                Util.SafeCall(Guns.ScaleNativeHaptics, a)
+            end
             local ok, ammo = pcall(function() return a:GetCurrentAmmoCount() end)
             if ok and type(ammo) == "number" then
                 local prev = lastAmmo[key]
@@ -88,39 +93,43 @@ function Guns.Tick(dtMs)
     end
 end
 
--- Multiplies the scale of the native vibrations defined in the weapon data.
-function Guns.ScaleNativeHaptics()
-    if cfg.NativeHapticScale == 1.0 then return end
-    for _, d in ipairs(FindAllOf("NDWEGunData") or {}) do
-        local key = Util.Key(d)
-        if Util.IsValid(d) and not scaledData[key] then
-            scaledData[key] = true
-            for _, prop in ipairs(NATIVE_EFFECTS) do
-                Util.SafeCall(function()
-                    local eff = d[prop]
-                    local s = eff.HapticEffectScale
-                    eff.HapticEffectScale = s * cfg.NativeHapticScale
-                    Util.DLog("GunData %s.%s scale %.2f -> %.2f", d:GetFullName(), prop, s, s * cfg.NativeHapticScale)
-                end)
-            end
-        end
+-- Multiplies the scale of the native vibrations defined in the data of a
+-- gun the player grabs (an AtlasGunData asset, shared by every gun of that
+-- type). Done once per data asset; F7 OFF divides it back.
+-- (It used to scan FindAllOf("NDWEGunData") every 2 s: exact class only, so
+-- it never found the AtlasGunData subclass and had no effect.)
+function Guns.ScaleNativeHaptics(gun)
+    local scale = cfg.NativeHapticScale or 1.0
+    if scale == 1.0 then return end
+    local d = Util.Prop(gun, "CurrentGunData") or Util.Prop(gun, "GunData")
+    local path = d and Util.Path(d)
+    if not path or scaledData[path] then return end
+    scaledData[path] = scale
+    for _, prop in ipairs(NATIVE_EFFECTS) do
+        Util.SafeCall(function()
+            local eff = d[prop]
+            local s = eff.HapticEffectScale
+            eff.HapticEffectScale = s * scale
+            Util.DLog("GunData %s.%s scale %.2f -> %.2f", path, prop, s, s * scale)
+        end)
     end
 end
 
 -- Undoes the native scaling (when the mod is disabled with F7).
 function Guns.RestoreNative()
-    for _, d in ipairs(FindAllOf("NDWEGunData") or {}) do
-        local key = Util.Key(d)
-        if Util.IsValid(d) and scaledData[key] then
-            scaledData[key] = nil
+    for path, scale in pairs(scaledData) do
+        local d = StaticFindObject(path)
+        if Util.IsValid(d) then
             for _, prop in ipairs(NATIVE_EFFECTS) do
                 Util.SafeCall(function()
                     local eff = d[prop]
-                    eff.HapticEffectScale = eff.HapticEffectScale / cfg.NativeHapticScale
+                    eff.HapticEffectScale = eff.HapticEffectScale / scale
                 end)
             end
         end
     end
+    scaledData = {}
+    checkedGuns = {}
 end
 
 function Guns.Init(config)

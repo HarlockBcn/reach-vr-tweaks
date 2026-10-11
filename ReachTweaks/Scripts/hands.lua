@@ -26,7 +26,7 @@ local cfg
 local props            -- [prop] = { mul = x } or { set = x }
 local orig = {}        -- [key][prop] = original
 local applied = {}     -- [key][prop] = value we wrote
-local patched = {}     -- [key] = true (keys only: objects are never kept across ticks)
+local patched = {}     -- [key] = object path (objects are never kept across ticks)
 
 local function isWeapon(actor)
     for _, cp in ipairs(WEAPON_CLASSES) do
@@ -55,7 +55,7 @@ local function apply(obj, label)
                 local new = op.set or (cur * op.mul)
                 if pcall(function() obj[prop] = new end) then
                     applied[key][prop] = new
-                    patched[key] = true
+                    patched[key] = patched[key] or Util.Path(obj) or true
                     Util.DLog("%s %s: %.3f -> %.3f", label, prop, cur, new)
                 end
             end
@@ -76,9 +76,9 @@ local function restore(obj)
     orig[key], applied[key], patched[key] = nil, nil, nil
 end
 
--- Weight-spring resolvers of a held object
+-- Weight-spring resolvers of a held object (the component search is cached)
 function Hands.WeightResolvers(actor)
-    local list = Util.FindOwnedBy(actor, RESOLVER_CLASSES)
+    local list = Util.FindOwnedByCached(actor, RESOLVER_CLASSES)
     local bowRes = Util.Prop(actor, "BowResolverRef")
     if bowRes and getNum(bowRes, "LinearStiffness") ~= nil then list[#list + 1] = bowRes end
     return list
@@ -99,6 +99,15 @@ function Hands.AllWeightResolvers()
     return list
 end
 
+-- A patched resolver found again from its path (nil if it no longer exists;
+-- the key check rules out another object created under the same name)
+local function patchedObject(key, path)
+    if type(path) ~= "string" then return nil end
+    local r = StaticFindObject(path)
+    if Util.IsValid(r) and Util.Key(r) == key then return r end
+    return nil
+end
+
 -- Every ~100 ms on the game thread
 function Hands.Tick()
     local heldKeys = {}
@@ -112,25 +121,20 @@ function Hands.Tick()
         end
     end
     -- Objects no longer held get their original values back (e.g. when thrown)
-    local pending = false
-    for key in pairs(patched) do
-        if not heldKeys[key] then pending = true break end
-    end
-    if pending then
-        for _, r in ipairs(Hands.AllWeightResolvers()) do
-            local key = Util.Key(r)
-            if patched[key] and not heldKeys[key] then restore(r) end
-        end
-        -- forget the ones that no longer exist (destroyed with the level)
-        for key in pairs(patched) do
-            if not heldKeys[key] then orig[key], applied[key], patched[key] = nil, nil, nil end
+    for key, path in pairs(patched) do
+        if not heldKeys[key] then
+            local r = patchedObject(key, path)
+            if r then restore(r) end
+            -- (gone: destroyed with the level) forget it either way
+            orig[key], applied[key], patched[key] = nil, nil, nil
         end
     end
 end
 
 function Hands.RestoreAll()
-    for _, r in ipairs(Hands.AllWeightResolvers()) do
-        if patched[Util.Key(r)] then restore(r) end
+    for key, path in pairs(patched) do
+        local r = patchedObject(key, path)
+        if r then restore(r) end
     end
     orig, applied, patched = {}, {}, {}
 end

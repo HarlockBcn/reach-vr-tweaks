@@ -25,13 +25,14 @@
 -- has one, otherwise the physics velocity of its root component.
 --
 -- Shields are kept as path strings (StaticFindObject each tick; UObjects are
--- never kept across ticks) and searched every few seconds.
+-- never kept across ticks), found when a player hand grabs one and dropped
+-- when idle again.
 local Util = require("util")
 local Player = require("player")
 
 local Shield = {}
 
--- FindAllOf is exact-class only
+-- Exact class names (the held actor's class is compared by name)
 local SHIELD_BP_CLASSES = { "BP_AtlasShield_C" }
 local MOVER_CLASSES = { "ProjectileMovementComponent", "AtlasProjectileMovementComponent" }
 local THROW_DETECT_SPEED = 100     -- cm/s
@@ -42,7 +43,6 @@ local TRACE_MS = { 50, 150, 400, 1000 }   -- flight speed log points after the t
 
 local cfg
 local paths = {}           -- shield path -> per-shield data
-local searchMs = 0
 local warned = {}
 
 local function warnOnce(key, fmt, ...)
@@ -99,7 +99,7 @@ local function moverOf(shield, d)
     end
     local m = Util.Prop(shield, "ProjectileMovementRef")
     if not m then
-        m = Util.FindOwnedBy(shield, MOVER_CLASSES)[1]
+        m = Util.FindOwnedByCached(shield, MOVER_CLASSES)[1]
     end
     if m then d.moverPath = objectPath(m) end
     return m
@@ -275,6 +275,7 @@ local function tickShield(d, shield, dtMs)
         d.relPos = nil
         Util.DLog("[shield] released (%d swing samples)", #d.samples)
     end
+    if not d.releaseMs and not d.flying then return end
     local v, kind = getVelocity(shield, d)
     local speed = v and len(v) or 0
     if d.releaseMs then
@@ -306,29 +307,47 @@ local function tickShield(d, shield, dtMs)
     if cfg.KeepSpeed then keepSpeed(d, shield, v, dtMs) end
 end
 
-function Shield.Tick(dtMs)
-    searchMs = searchMs - dtMs
-    if searchMs <= 0 then
-        searchMs = 2000
-        local found = {}
-        for _, cn in ipairs(SHIELD_BP_CLASSES) do
-            for _, a in ipairs(FindAllOf(cn) or {}) do found[#found + 1] = a end
-        end
-        if #found == 0 and next(paths) == nil and Util.Debug then
-            warnOnce("none", "[shield] no shield in the world yet")
-        end
-        for _, a in ipairs(found) do
-            local p = objectPath(a)
-            if p and not p:find("Default__", 1, true) and not p:find("_GEN_VARIABLE", 1, true) and not paths[p] then
-                paths[p] = { samples = {}, clock = 0 }
-                Util.DLog("[shield] found %s", p)
+-- A shield is tracked from the moment a player hand holds it until it is
+-- idle again (not held, no throw pending, not flying); then it is dropped and
+-- found again the next time it is grabbed. No object search is needed: only
+-- a thrown shield matters, and it is always held first.
+local heldKeys = { [0] = nil, [1] = nil }   -- held actor key last checked per hand
+
+local function discover()
+    for hand = 0, 1 do
+        local a = Player.Held(hand)
+        local key = a and Util.Key(a) or nil
+        if key ~= heldKeys[hand] then
+            heldKeys[hand] = key
+            if a then
+                local okC, cls = pcall(function() return a:GetClass() end)
+                local cname = okC and fname(cls) or nil
+                for _, cn in ipairs(SHIELD_BP_CLASSES) do
+                    if cname == cn then
+                        local p = Util.Path(a)
+                        if p and not paths[p] then
+                            paths[p] = { samples = {}, clock = 0 }
+                            Util.DLog("[shield] found %s", p)
+                        end
+                        break
+                    end
+                end
             end
         end
     end
+end
+
+local function idle(d)
+    return not d.held and not d.releaseMs and not d.flying
+end
+
+function Shield.Tick(dtMs)
+    discover()
     for p, d in pairs(paths) do
         local shield = StaticFindObject(p)
         if Util.IsValid(shield) then
             tickShield(d, shield, dtMs)
+            if idle(d) then paths[p] = nil end
         else
             Util.DLog("[shield] gone: %s", p)
             paths[p] = nil
@@ -339,7 +358,7 @@ end
 -- Tweaks turned off (F7): nothing of the game is changed outside a throw.
 function Shield.Stop()
     paths = {}
-    searchMs = 0
+    heldKeys = { [0] = nil, [1] = nil }
 end
 
 function Shield.Init(config)

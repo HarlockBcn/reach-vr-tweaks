@@ -16,8 +16,9 @@ local lastKey = nil
 local original = nil     -- game's RunSpeed (cm/s)
 local applied = nil      -- RunSpeed written here
 
-local function movement(pawn)
-    return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
+-- Movement component of the current pawn (cached for the tick by Player)
+local function movement()
+    return Player.Movement()
 end
 
 local function readNum(obj, name)
@@ -51,7 +52,7 @@ function Sprint.Tick()
         lastKey, original, applied = nil, nil, nil
         return
     end
-    local key = Util.Key(pawn)
+    local key = Player.PawnKey()
     if key ~= lastKey then
         lastKey, original, applied = key, nil, nil
     end

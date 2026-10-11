@@ -23,10 +23,11 @@ local baseDist = nil
 
 local CLICKS = { 0.25, 0.5, 0.75 }
 
--- Looked up every tick (object references are never kept across ticks).
+-- Looked up every tick (object references are never kept across ticks; the
+-- component search itself is cached as a path).
 local function findPullable(actor)
     local key = Util.Key(actor)
-    local p = Util.FindOwnedBy(actor, { "AtlasPullable" })[1]
+    local p = Util.FindOwnedByCached(actor, { "AtlasPullable" })[1]
     if pullableBowKey ~= key then
         pullableBowKey = key
         Util.DLog("Bow: pullable %s", p and p:GetFullName() or "NOT FOUND (using distance between hands)")

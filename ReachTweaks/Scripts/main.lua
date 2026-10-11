@@ -216,24 +216,63 @@ local function realDeltaMs(pc)
     return Util.Clamp(dt, 1, 100)
 end
 
-local slowAcc, dataAcc, diagAcc = 0, 0, 0
+local slowAcc, introAcc, diagAcc = 0, 0, 0
 local tickCount, rateAcc = 0, 0
+
+-- Debug: time spent in each step. os.clock() only has ~1 ms resolution on
+-- Windows, but summed over thousands of ticks the average is still right;
+-- "slow" counts ticks where a step took 2 ms or more (a visible hitch in VR).
+local perf = {}            -- name -> { sum, n, slow, max }
+local perfFrame = { sum = 0, n = 0, slow = 0, max = 0 }
+local function perfAdd(rec, ms)
+    rec.sum, rec.n = rec.sum + ms, rec.n + 1
+    if ms >= 2 then rec.slow = rec.slow + 1 end
+    if ms > rec.max then rec.max = ms end
+end
+local function perfReport()
+    local parts = {}
+    for name, r in pairs(perf) do
+        if r.sum > 0 or r.slow > 0 then
+            parts[#parts + 1] = { name = name, r = r }
+        end
+    end
+    table.sort(parts, function(a, b) return a.r.sum > b.r.sum end)
+    local text = {}
+    for _, p in ipairs(parts) do
+        text[#text + 1] = string.format("%s %.3f", p.name, p.r.sum / math.max(p.r.n, 1))
+        if p.r.slow > 0 then text[#text] = text[#text] .. string.format(" (%dx>=2ms, max %.0f)", p.r.slow, p.r.max) end
+    end
+    local f = perfFrame
+    Util.Log("[perf] mod per tick: avg %.3f ms, %d ticks >= 2 ms (max %.0f ms) | avg ms per call: %s",
+        f.sum / math.max(f.n, 1), f.slow, f.max, #text > 0 and table.concat(text, ", ") or "all < clock resolution")
+    perf = {}
+    perfFrame = { sum = 0, n = 0, slow = 0, max = 0 }
+end
 
 -- Traces the first 3 runs of each step (helps locate crashes).
 local traced = {}
 local function step(name, fn, ...)
+    if not Util.Debug then
+        Util.SafeCall(fn, ...)
+        return
+    end
     local n = traced[name] or 0
-    if Util.Debug and n < 3 then
+    if n < 3 then
         traced[name] = n + 1
         Util.Log("-> %s", name)
-        Util.SafeCall(fn, ...)
-        Util.Log("<- %s", name)
-    else
-        Util.SafeCall(fn, ...)
     end
+    local t0 = os.clock()
+    Util.SafeCall(fn, ...)
+    local rec = perf[name]
+    if rec == nil then
+        rec = { sum = 0, n = 0, slow = 0, max = 0 }
+        perf[name] = rec
+    end
+    perfAdd(rec, (os.clock() - t0) * 1000)
+    if n < 3 then Util.Log("<- %s", name) end
 end
 
-local function tick()
+local function tickBody()
     local pc = Player.GetController()
     if not pc then
         Util.RunTimers(11)
@@ -241,10 +280,10 @@ local function tick()
     end
     local dt = realDeltaMs(pc)
     Util.RunTimers(dt)
-    Keys.Tick(pc)
+    Keys.Tick(pc, dt)
 
     slowAcc = slowAcc + dt
-    dataAcc = dataAcc + dt
+    introAcc = introAcc + dt
     diagAcc = diagAcc + dt
 
     -- Actual loop rate (haptics need a smooth update)
@@ -252,19 +291,22 @@ local function tick()
     rateAcc = rateAcc + dt
     if rateAcc >= 10000 then
         Util.DLog("Loop: %.0f ticks/s", tickCount * 1000 / rateAcc)
+        if Util.Debug then perfReport() end
         tickCount, rateAcc = 0, 0
     end
 
-    step("Intro.Tick", Intro.Tick, pc)
-    step("Player.Refresh", Player.Refresh)
+    -- Level changes do not need to be seen on the exact frame
+    if introAcc >= 200 then
+        introAcc = 0
+        step("Intro.Tick", Intro.Tick, pc)
+    end
     if slowAcc >= 100 then
         slowAcc = 0
+        -- Grabs and releases update at once through the pawn hooks; this
+        -- refresh is only a safety net
+        step("Player.Refresh", Player.Refresh)
         if active and config.Hands.Enabled and not experimenting() then step("Hands.Tick", Hands.Tick) end
         if active and experimenting() then step("Experiments.Tick", Experiments.Tick) end
-    end
-    if dataAcc >= 2000 then
-        dataAcc = 0
-        if active and config.Guns.Enabled then step("Guns.ScaleNativeHaptics", Guns.ScaleNativeHaptics) end
     end
     if Util.Debug and diagAcc >= 500 then
         diagAcc = 0
@@ -285,6 +327,14 @@ local function tick()
     if active and shieldOn then step("Shield.Tick", Shield.Tick, dt) end
     if active and saveTimeOn then step("SaveTime.Tick", SaveTime.Tick, dt) end
     step("Haptics.Tick", Haptics.Tick, dt, pc)
+end
+
+local function tick()
+    local t0 = Util.Debug and os.clock() or nil
+    Player.BeginFrame()
+    Util.SafeCall(tickBody)
+    Player.EndFrame()
+    if t0 then perfAdd(perfFrame, (os.clock() - t0) * 1000) end
 end
 
 -- One tick per frame when UE4SS supports it; otherwise the closest option.

@@ -34,15 +34,57 @@ function Player.GetController()
     return pc
 end
 
--- Always read from the controller: the pawn changes with every level and
--- death, and keeping the reference could leave it dangling.
-function Player.GetPawn()
+-- Per-tick cache: several modules ask for the pawn and its movement
+-- component every tick. Only valid between BeginFrame and EndFrame (one tick
+-- of the main loop); outside it (hooks, timers) everything is read again, so
+-- no UObject is kept across ticks.
+local frame = nil
+
+function Player.BeginFrame()
+    frame = {}
+end
+
+function Player.EndFrame()
+    frame = nil
+end
+
+local function readPawn()
     local c = Player.GetController()
     if c then
         local p = Util.Prop(c, "Pawn")
         if p and Util.IsA(p, PAWN_CLASS) then return p end
     end
     return nil
+end
+
+-- Always read from the controller: the pawn changes with every level and
+-- death, and keeping the reference could leave it dangling.
+function Player.GetPawn()
+    if frame == nil then return readPawn() end
+    if frame.pawn == nil then frame.pawn = readPawn() or false end
+    return frame.pawn or nil
+end
+
+-- Key of the current pawn (detects level changes and respawns).
+function Player.PawnKey()
+    local p = Player.GetPawn()
+    if not p then return nil end
+    if frame == nil then return Util.Key(p) end
+    if frame.pawnKey == nil then frame.pawnKey = Util.Key(p) end
+    return frame.pawnKey
+end
+
+-- Movement component of the pawn (BP_AtlasMovementComponent).
+local function readMovement(p)
+    return Util.Prop(p, "AtlasMovementComponentReference") or Util.Prop(p, "AtlasMovementComponent")
+end
+
+function Player.Movement()
+    local p = Player.GetPawn()
+    if not p then return nil end
+    if frame == nil then return readMovement(p) end
+    if frame.movement == nil then frame.movement = readMovement(p) or false end
+    return frame.movement or nil
 end
 
 local function handCoupler(hand)
@@ -110,12 +152,13 @@ function Player.HandHoldingClass(classPaths)
 end
 
 -- Real motion controller of a hand (from MotionSource "Left"/"Right").
--- Looked up every call (object references are never kept across ticks).
+-- Looked up every call (object references are never kept across ticks; the
+-- search itself is cached as paths).
 function Player.MotionController(hand)
     local pawn = Player.GetPawn()
     if not pawn then return nil end
     local want = hand == Haptics.LEFT and "left" or "right"
-    for _, mc in ipairs(Util.FindOwnedBy(pawn, { "MotionControllerComponent" })) do
+    for _, mc in ipairs(Util.FindOwnedByCached(pawn, { "MotionControllerComponent" })) do
         local ok, src = pcall(function() return mc.MotionSource:ToString() end)
         if ok and src and src:lower():find(want) then return mc end
     end

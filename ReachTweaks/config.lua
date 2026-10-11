@@ -85,8 +85,10 @@ return {
         FireDurationMs = 120,        -- duration of the fading recoil tail
         AutomaticFactor = 0.75,      -- automatic weapons: slightly weaker, shorter kick
         OtherHandFactor = 0.7,       -- supporting hand when held with two hands
-        -- Multiplies the game's original weapon vibrations (1 = unchanged)
-        NativeHapticScale = 1.5,
+        -- Multiplies the game's original weapon vibrations (1 = unchanged).
+        -- Before v1.14 this setting had no effect (bug), so 1.0 keeps the
+        -- feel you are used to; try 1.5 for stronger game vibrations.
+        NativeHapticScale = 1.0,
     },
 
     -- --------------------------------------------------------

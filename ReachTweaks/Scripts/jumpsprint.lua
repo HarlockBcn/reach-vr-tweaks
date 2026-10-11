@@ -33,8 +33,9 @@ local airRestarted = false       -- already restarted once during this jump
 local restarts = 0               -- restarts since the jump started
 local warned = {}
 
-local function movement(pawn)
-    return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
+-- Movement component of the current pawn (cached for the tick by Player)
+local function movement()
+    return Player.Movement()
 end
 
 local function readBool(obj, name)
@@ -85,7 +86,7 @@ function JumpSprint.Tick(dtMs)
         reset()
         return
     end
-    local key = Util.Key(pawn)
+    local key = Player.PawnKey()
     if key ~= lastKey then
         lastKey = key
         reset()

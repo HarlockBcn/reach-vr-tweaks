@@ -81,7 +81,7 @@ function Diag.Tick()
                     Util.Log("[diag]   component: %s%s", c:GetFullName(), d ~= "" and (" | " .. d) or "")
                 end
             end
-            for i, r in ipairs(Util.FindOwnedBy(a, { "AtlasGunResolver", "NDNTResolverBasic", "NDNTResolver" })) do
+            for i, r in ipairs(Util.FindOwnedByCached(a, { "AtlasGunResolver", "NDNTResolverBasic", "NDNTResolver" })) do
                 report(string.format("%s.resolver%d", name, i), r)
             end
             local data = Util.Prop(a, "CurrentGunData") or Util.Prop(a, "GunData")

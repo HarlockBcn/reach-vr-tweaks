@@ -50,9 +50,18 @@ function Util.SafeCall(fn, ...)
     return res
 end
 
+-- Plain functions for pcall (no closure is created on every call: these
+-- helpers run hundreds of times per frame)
+local function isValidRaw(o) return o:IsValid() end
+local function addressRaw(o) return o:GetAddress() end
+local function ownerRaw(o) return o:GetOwner() end
+local function indexRaw(o, k) return o[k] end
+local function fullNameRaw(o) return o:GetFullName() end
+local function isARaw(o, cls) return o:IsA(cls) end
+
 function Util.IsValid(obj)
     if obj == nil then return false end
-    local ok, valid = pcall(function() return obj:IsValid() end)
+    local ok, valid = pcall(isValidRaw, obj)
     return ok and valid
 end
 
@@ -60,9 +69,17 @@ end
 -- Never keep UObjects across ticks: if the engine destroys them, touching the
 -- stale wrapper can crash the game. Keep keys and look objects up again.
 function Util.Key(obj)
-    local ok, addr = pcall(function() return obj:GetAddress() end)
+    local ok, addr = pcall(addressRaw, obj)
     if ok and addr then return addr end
     return tostring(obj)
+end
+
+-- Object path without the class prefix ("Class /Path.Object" -> "/Path.Object"),
+-- usable with StaticFindObject.
+function Util.Path(obj)
+    local ok, full = pcall(fullNameRaw, obj)
+    if not ok or type(full) ~= "string" then return nil end
+    return full:match("^%S+%s+(.+)$") or full
 end
 
 function Util.SameObject(a, b)
@@ -86,7 +103,7 @@ function Util.IsA(obj, classPath)
     if not Util.IsValid(obj) then return false end
     local cls = Util.Class(classPath)
     if cls == nil then return false end
-    local ok, res = pcall(function() return obj:IsA(cls) end)
+    local ok, res = pcall(isARaw, obj, cls)
     return ok and res
 end
 
@@ -116,7 +133,7 @@ end
 
 function Util.GetOwner(obj)
     if not Util.IsValid(obj) then return nil end
-    local ok, owner = pcall(function() return obj:GetOwner() end)
+    local ok, owner = pcall(ownerRaw, obj)
     if ok and Util.IsValid(owner) then return owner end
     return nil
 end
@@ -130,22 +147,71 @@ function Util.FindOwnedBy(actor, classNames)
     local key = Util.Key(actor)
     for _, cn in ipairs(classNames) do
         for _, o in ipairs(FindAllOf(cn) or {}) do
-            local owner = Util.GetOwner(o)
-            if owner == nil then
-                local ok, oa = pcall(function() return o.OwnerActor end)
-                if ok and Util.IsValid(oa) then owner = oa end
-            end
+            local owner = Util.OwnerOf(o)
             if owner and Util.Key(owner) == key then out[#out + 1] = o end
         end
     end
     return out
 end
 
+-- Owner actor of a component (GetOwner, or OwnerActor on nDreams objects)
+function Util.OwnerOf(o)
+    local owner = Util.GetOwner(o)
+    if owner == nil then
+        local ok, oa = pcall(indexRaw, o, "OwnerActor")
+        if ok and Util.IsValid(oa) then owner = oa end
+    end
+    return owner
+end
+
+-- FindOwnedBy with the result remembered as object paths: FindAllOf walks the
+-- whole object list (milliseconds), StaticFindObject on a path is a hash
+-- lookup. The paths are checked on every call (the object still exists and
+-- still belongs to the actor) and the search is repeated when one is gone; an
+-- empty result is searched again after EMPTY_RETRY_MS.
+local ownedCache = {}       -- "actorKey|classes" -> { paths = {...}, at = ms }
+local ownedCount = 0
+local EMPTY_RETRY_MS = 2000
+
+function Util.FindOwnedByCached(actor, classNames)
+    if not Util.IsValid(actor) then return {} end
+    local key = Util.Key(actor)
+    local ck = tostring(key) .. "|" .. table.concat(classNames, ",")
+    local now = os.clock() * 1000
+    local c = ownedCache[ck]
+    if c and (#c.paths > 0 or now - c.at < EMPTY_RETRY_MS) then
+        local out = {}
+        for _, p in ipairs(c.paths) do
+            local o = StaticFindObject(p)
+            local owner = Util.IsValid(o) and Util.OwnerOf(o) or nil
+            if not owner or Util.Key(owner) ~= key then
+                out = nil
+                break
+            end
+            out[#out + 1] = o
+        end
+        if out then return out end
+    end
+    local list = Util.FindOwnedBy(actor, classNames)
+    local paths = {}
+    for _, o in ipairs(list) do
+        local p = Util.Path(o)
+        if p then paths[#paths + 1] = p end
+    end
+    if c == nil then
+        ownedCount = ownedCount + 1
+        -- Actors come and go with levels: start over instead of growing forever
+        if ownedCount > 256 then ownedCache, ownedCount = {}, 1 end
+    end
+    ownedCache[ck] = { paths = paths, at = now }
+    return list
+end
+
 -- Reads an object property; returns nil if it is not a valid UObject.
 -- Note: many nDreams properties are NDComponentPath structs; the actual
 -- pointer lives in the matching "...Reference" property.
 function Util.Prop(obj, name)
-    local ok, v = pcall(function() return obj[name] end)
+    local ok, v = pcall(indexRaw, obj, name)
     if ok and Util.IsValid(v) then return v end
     return nil
 end
