@@ -118,7 +118,11 @@ return {
         -- "slide" = crouched slide, like a normal slide
         -- "stop"  = crouch and stop running (no slide)
         LandingCrouch = "slide",
-        LandingWindowMs = 300,   -- a press this long after landing still counts as "while landing"
+        LandingWindowMs = 300,
+        BrakeWithStick = true,   -- push the stick against the slide to brake it
+        BrakeDecel = 1000,       -- braking at full stick (cm/s per second; ~0.35 s from full slide speed)
+        BrakeMinStick = 0.5,     -- stick deflection needed to brake (0..1)
+        BrakeStopSpeed = 150,    -- the braked slide ends below this speed (cm/s)   -- a press this long after landing still counts as "while landing"
         ThrusterStepMs = 30,     -- internal: length of each movement push
     },
 

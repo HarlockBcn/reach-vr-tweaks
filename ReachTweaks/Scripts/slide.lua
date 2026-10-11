@@ -33,6 +33,10 @@
 -- player up again, so the mod crouches itself (Slide.LandingCrouch):
 --  * "slide": a normal crouched slide;
 --  * "stop":  no slide; the player crouches and the sprint ends.
+-- Braking: pushing the stick against the slide (BrakeWithStick) takes speed
+-- off at BrakeDecel x stick deflection; the slide ends when it gets slow. The
+-- stick direction is the game's own (CalculateMovementInputVector: HeadInput
+-- or HandInput, as set in the game's movement options).
 -- Any slide re-crouches if the game stood the player up (a sprint started in
 -- the same tick as the press), otherwise it slid standing.
 local Util = require("util")
@@ -55,6 +59,8 @@ local sliding = false
 local slideT = 0
 local dirX, dirY = 0, 0
 local startSpeed = 0
+local brakeLoss = 0              -- speed taken off by braking (cm/s)
+local braking = false
 local blockedMs, airMs = 0, 0
 local cooldown = 0
 local byButton = false
@@ -167,6 +173,29 @@ local function speedAt(t)
     return startSpeed * (e + (1 - e) * (1 - k) * (1 - k))
 end
 
+-- Stick deflection (0..1) against the slide direction: 0 when not pushed
+-- backwards (more than ~60 degrees away from straight back does not count).
+local warnedBrake = false
+local function brakeInput(mc)
+    local f, r = call(mc, "GetForwardInput"), call(mc, "GetRightInput")
+    local v = call(mc, "CalculateMovementInputVector")
+    if type(f) ~= "number" or type(r) ~= "number" or not v then
+        if not warnedBrake then
+            warnedBrake = true
+            Util.Log("[slide] stick input not readable; braking unavailable")
+        end
+        return 0
+    end
+    local stick = math.min(math.sqrt(f * f + r * r), 1)
+    local ok, vx, vy = pcall(function() return v.X, v.Y end)
+    if not ok or type(vx) ~= "number" then return 0 end
+    local len = math.sqrt(vx * vx + vy * vy)
+    if stick < cfg.BrakeMinStick or len < 1e-3 then return 0 end
+    local along = (vx * dirX + vy * dirY) / len
+    if along > -0.5 then return 0 end
+    return stick
+end
+
 -- Holds bIsSprinting on without the OnSprintStarted broadcast; Speed stays at
 -- walk speed. Releasing it lets the sprint input start a real sprint again.
 local function holdSprint(mc, on, endRealSprint)
@@ -255,6 +284,7 @@ local function startSlide(mc, speed, h, peak, button)
     blockedMs, airMs = 0, 0
     dirX, dirY = velX / speed, velY / speed
     startSpeed = math.min(speed * cfg.SpeedBoost, cfg.MaxSpeed)
+    brakeLoss, braking = 0, false
     crouchFrom = nil
     recrouchLogged = false
     -- Head slide: crouch at the game's crouch height
@@ -480,12 +510,22 @@ function Slide.Tick(dtMs)
 
     if sliding then
         slideT = slideT + dtMs
-        local target = speedAt(slideT)
+        if cfg.BrakeWithStick then
+            local b = brakeInput(mc)
+            if b > 0 then
+                brakeLoss = brakeLoss + cfg.BrakeDecel * b * dt
+                if not braking then Util.DLog("[slide] braking (stick %.2f)", b) end
+            end
+            braking = b > 0
+        end
+        local target = speedAt(slideT) - brakeLoss
         -- Hit a wall: actual speed far below the commanded one
         if slideT > 150 and speed < target * 0.3 then blockedMs = blockedMs + dtMs else blockedMs = 0 end
         if not onGround then airMs = airMs + dtMs else airMs = 0 end
         if slideT >= cfg.DurationMs then
             stopSlide(mc, "done")
+        elseif brakeLoss > 0 and target <= cfg.BrakeStopSpeed then
+            stopSlide(mc, "braked")
         elseif blockedMs >= 120 then
             stopSlide(mc, "blocked")
         elseif airMs >= 100 then
@@ -612,6 +652,10 @@ function Slide.Init(config)
     cfg.ThrusterStepMs = cfg.ThrusterStepMs or 30
     cfg.HapticAmplitude = cfg.HapticAmplitude or 0.3
     cfg.CrouchDownMs = cfg.CrouchDownMs or 300
+    if cfg.BrakeWithStick == nil then cfg.BrakeWithStick = true end
+    cfg.BrakeDecel = cfg.BrakeDecel or 2500
+    cfg.BrakeMinStick = cfg.BrakeMinStick or 0.5
+    cfg.BrakeStopSpeed = cfg.BrakeStopSpeed or 150
     if cfg.KeepSprintLines == nil then cfg.KeepSprintLines = true end
     if cfg.NoSprintWhileCrouched == nil then cfg.NoSprintWhileCrouched = true end
     Util.Log("Slide enabled (trigger=%s, drop=%.0f cm in %d ms, min speed=%.0f cm/s, %d ms, landing crouch=%s)",

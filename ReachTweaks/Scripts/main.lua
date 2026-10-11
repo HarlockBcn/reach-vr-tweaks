@@ -1,5 +1,5 @@
 -- ReachTweaks: agile hands with weapons, better bow and firearm haptics, sprint slide, arm-swing sprint, sprint speed, sprint through jumps.
-local VERSION = "1.9.0"
+local VERSION = "1.10.0"
 
 local Util = require("util")
 
