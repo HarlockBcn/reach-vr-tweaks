@@ -5,6 +5,12 @@
   The zip is built from the git tag (committed files only), so a release
   never contains local edits, logs or reverse-engineering files.
 
+  config.lua: the release ships the development config.lua as it is in the
+  working tree (uncommitted edits included), with the developer settings
+  Debug, TestGuns, Intro.SkipLogos and Intro.SkipShaderWarmup forced to
+  false. That version is what the release commit stores; the working tree
+  copy keeps the development values.
+
   Usage (from the repo root):
     powershell -File tools\release.ps1 -Bump minor     new feature   1.13.0 -> 1.14.0
     powershell -File tools\release.ps1 -Bump patch     bug fix       1.13.0 -> 1.13.1
@@ -13,8 +19,8 @@
     powershell -File tools\release.ps1                 rebuild the zip of the current version
 
   Before a release: write the changes under "## [Unreleased]" in CHANGELOG.md
-  and commit (or leave uncommitted only CHANGELOG.md; it is included in the
-  release commit).
+  and commit (only CHANGELOG.md and config.lua may be left uncommitted; both
+  go into the release commit, config.lua with the release settings).
 #>
 param(
     [ValidateSet('major', 'minor', 'patch')]
@@ -28,6 +34,10 @@ $ErrorActionPreference = 'Stop'
 $Root      = Split-Path -Parent $PSScriptRoot
 $MainLua   = Join-Path $Root 'ReachTweaks\Scripts\main.lua'
 $Changelog = Join-Path $Root 'CHANGELOG.md'
+$ConfigRel = 'ReachTweaks/config.lua'
+$Config    = Join-Path $Root 'ReachTweaks\config.lua'
+# Developer settings that are always off in a release
+$ReleaseOff = @('Debug', 'TestGuns', 'SkipLogos', 'SkipShaderWarmup')
 $Dist      = Join-Path $Root 'dist'
 # What a player needs; everything else (tools, RE notes) stays out
 $Payload   = @('Play_ReachTweaks.bat', 'Uninstall_ReachTweaks.bat', 'Launcher', 'ReachTweaks', 'CHANGELOG.md', 'README.md')
@@ -70,6 +80,18 @@ function Get-NextVersion($cur) {
     }
 }
 
+# config.lua text with the developer settings set to false (each must be
+# found exactly once, so a renamed setting stops the release)
+function Set-ReleaseFlags($text) {
+    foreach ($key in $ReleaseOff) {
+        $re = "(?m)^(\s*$key\s*=\s*)(true|false)\b"
+        $n = [regex]::Matches($text, $re).Count
+        if ($n -ne 1) { throw "config.lua: expected one '$key = true/false' line, found $n" }
+        $text = [regex]::Replace($text, $re, '${1}false')
+    }
+    return $text
+}
+
 # Text of one version's section (without its heading)
 function Get-ChangelogSection($text, $name) {
     $m = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($name))\][^\n]*\n(.*?)(?=^## \[|\z)")
@@ -79,7 +101,7 @@ function Get-ChangelogSection($text, $name) {
 
 function New-Release($cur, $new) {
     $dirty = Invoke-Git status --porcelain --untracked-files=no
-    $dirty = @($dirty | Where-Object { $_ -and $_ -notmatch '\sCHANGELOG\.md$' })
+    $dirty = @($dirty | Where-Object { $_ -and $_ -notmatch '\s(CHANGELOG\.md|ReachTweaks/config\.lua)$' })
     if ($dirty.Count) { throw "Commit or discard these changes first:`n$($dirty -join "`n")" }
     if (Invoke-Git tag --list "v$new") { throw "Tag v$new already exists" }
 
@@ -96,6 +118,18 @@ function New-Release($cur, $new) {
     [IO.File]::WriteAllText($MainLua, $lua, $Utf8)
 
     Invoke-Git add -- $Changelog $MainLua | Out-Null
+
+    # Release config: the working copy with the developer settings off, staged
+    # directly (the working tree file keeps the development values)
+    $cfg = Set-ReleaseFlags ([IO.File]::ReadAllText($Config))
+    $tmpCfg = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($tmpCfg, $cfg, $Utf8)
+        $hash = (Invoke-Git hash-object -w "--path=$ConfigRel" -- $tmpCfg)[0]
+        Invoke-Git update-index --cacheinfo "100644,$hash,$ConfigRel" | Out-Null
+    } finally {
+        Remove-Item $tmpCfg -ErrorAction SilentlyContinue
+    }
     Invoke-Git commit -q -m "Release v$new" -m $notes | Out-Null
     Invoke-Git tag -a "v$new" -m "ReachTweaks v$new" -m $notes | Out-Null
     Ok "Version $cur -> $new, committed and tagged v$new"
@@ -117,6 +151,12 @@ function Build-Zip($ver) {
         Invoke-Git archive --format=zip -o $raw $tag -- @paths | Out-Null
         Expand-Archive -Path $raw -DestinationPath $stage -Force
         Remove-Item $raw
+
+        # Developer settings off (also when rebuilding an older tag)
+        $cfgFile = Join-Path $stage 'ReachTweaks\config.lua'
+        if (Test-Path $cfgFile) {
+            [IO.File]::WriteAllText($cfgFile, (Set-ReleaseFlags ([IO.File]::ReadAllText($cfgFile))), $Utf8)
+        }
 
         # Player README: everything before the developer sections
         $readme = Join-Path $stage 'README.md'

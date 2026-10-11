@@ -105,10 +105,10 @@ The version lives in `ReachTweaks/Scripts/main.lua` (`local VERSION`, shown in t
 
 1. While working, add each change under `## [Unreleased]` in `CHANGELOG.md` (in English).
 2. Commit the work, then run `powershell -File tools
-elease.ps1 -Bump minor` (or `patch` / `major`, or `-Version X.Y.Z`). It checks the tree is clean (only `CHANGELOG.md` may be uncommitted), turns `Unreleased` into the new version with today's date, updates `VERSION` in `main.lua`, commits `Release vX.Y.Z`, tags it and builds the zip.
+elease.ps1 -Bump minor` (or `patch` / `major`, or `-Version X.Y.Z`). It checks the tree is clean (only `CHANGELOG.md` and `ReachTweaks/config.lua` may be uncommitted), turns `Unreleased` into the new version with today's date, updates `VERSION` in `main.lua`, commits `Release vX.Y.Z`, tags it and builds the zip.
 3. Output in `dist/` (ignored by git): `ReachTweaks-vX.Y.Z.zip` (a `ReachTweaks` folder with the two `.bat` files, `Launcher`, the mod, `CHANGELOG.md` and the player part of this README, i.e. everything before "Project layout") and `ReachTweaks-vX.Y.Z-notes.md` (only this version's changes, to paste on a download page).
 
-The zip is built from the git tag, so local edits, logs, `tools/` and the RE notes never end up in it. `release.ps1` without arguments rebuilds the zip of the current version. Note: `config.lua` is shipped as committed (check `Debug` and `TestGuns` before a release).
+The zip is built from the git tag, so local edits, logs, `tools/` and the RE notes never end up in it. `release.ps1` without arguments rebuilds the zip of the current version. `config.lua`: a release ships the development `ReachTweaks/config.lua` as it is in the working tree (uncommitted edits included) with `Debug`, `TestGuns`, `Intro.SkipLogos` and `Intro.SkipShaderWarmup` forced to `false`; that version goes into the release commit while the working copy keeps the development values (the zip build forces them off again, also when rebuilding an older tag). A missing or duplicated setting stops the release.
 
 ## Reverse-engineering notes
 
