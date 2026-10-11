@@ -12,3 +12,6 @@ publics.txt
 # Python
 __pycache__/
 *.pyc
+
+# Release builds (tools/release.ps1)
+dist/

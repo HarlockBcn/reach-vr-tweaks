@@ -94,8 +94,20 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/intro.lua       fast startup
   Scripts/spawner.lua, experiments.lua, notify.lua    test tools (F5/F6/F8, VR text)
   Scripts/diag.lua, lagprobe.lua                      debug diagnostics
-tools/                                             reverse-engineering helpers (Python)
+CHANGELOG.md                                       changes per version (shipped in every release)
+tools/release.ps1                                  release builder (version bump, tag, zip)
+tools/*.py                                         reverse-engineering helpers (Python)
 ```
+
+## Releases
+
+The version lives in `ReachTweaks/Scripts/main.lua` (`local VERSION`, shown in the log) and in git tags `vX.Y.Z`; changes are listed in `CHANGELOG.md` ([Semantic Versioning](https://semver.org/): minor = new feature, patch = fix/tuning, major = incompatible config changes).
+
+1. While working, add each change under `## [Unreleased]` in `CHANGELOG.md` (in English).
+2. Commit the work, then run `powershell -File toolselease.ps1 -Bump minor` (or `patch` / `major`, or `-Version X.Y.Z`). It checks the tree is clean (only `CHANGELOG.md` may be uncommitted), turns `Unreleased` into the new version with today's date, updates `VERSION` in `main.lua`, commits `Release vX.Y.Z`, tags it and builds the zip.
+3. Output in `dist/` (ignored by git): `ReachTweaks-vX.Y.Z.zip` (a `ReachTweaks` folder with the two `.bat` files, `Launcher`, the mod, `CHANGELOG.md` and the player part of this README, i.e. everything before "Project layout") and `ReachTweaks-vX.Y.Z-notes.md` (only this version's changes, to paste on a download page).
+
+The zip is built from the git tag, so local edits, logs, `tools/` and the RE notes never end up in it. `release.ps1` without arguments rebuilds the zip of the current version. Note: `config.lua` is shipped as committed (check `Debug` and `TestGuns` before a release).
 
 ## Reverse-engineering notes
 
