@@ -1,5 +1,5 @@
--- ReachTweaks: agile hands with weapons, better bow and firearm haptics, sprint slide, arm-swing sprint, sprint speed, sprint through jumps, grapple only in view, shield throw speed.
-local VERSION = "1.12.0"
+-- ReachTweaks: agile hands with weapons, better bow and firearm haptics, sprint slide, arm-swing sprint, sprint speed, sprint through jumps, grapple only in view, shield throw speed, save time in the save list.
+local VERSION = "1.13.0"
 
 local Util = require("util")
 
@@ -102,6 +102,7 @@ local Sprint = require("sprint")
 local JumpSprint = require("jumpsprint")
 local Grapple = require("grapple")
 local Shield = require("shield")
+local SaveTime = require("savetime")
 local Keys = require("keys")
 
 Player.Init()
@@ -122,6 +123,8 @@ local grappleOn = config.GrappleView ~= nil and config.GrappleView.Enabled == tr
 if grappleOn then Grapple.Init(config.GrappleView) end
 local shieldOn = config.Shield ~= nil and config.Shield.Enabled == true
 if shieldOn then Shield.Init(config.Shield) end
+local saveTimeOn = config.SaveTime ~= nil and config.SaveTime.Enabled == true
+if saveTimeOn then SaveTime.Init(config.SaveTime) end
 Intro.Init(config.Intro or {})
 local Experiments = nil
 if config.TestGuns then
@@ -191,6 +194,7 @@ local function setActive(on)
         if slideOn then Util.SafeCall(Slide.Stop) end
         if grappleOn then Util.SafeCall(Grapple.Stop) end
         if shieldOn then Util.SafeCall(Shield.Stop) end
+        if saveTimeOn then Util.SafeCall(SaveTime.Stop) end
         Notify.Show("ReachTweaks: OFF", { R = 255, G = 90, B = 80 })
         -- one long buzz
         for h = 0, 1 do Haptics.Pulse(h, 0.6, 350, 0.6, 0.3, true) end
@@ -279,6 +283,7 @@ local function tick()
     if active and slideOn then step("Slide.Tick", Slide.Tick, dt) end
     if active and grappleOn then step("Grapple.Tick", Grapple.Tick, dt) end
     if active and shieldOn then step("Shield.Tick", Shield.Tick, dt) end
+    if active and saveTimeOn then step("SaveTime.Tick", SaveTime.Tick, dt) end
     step("Haptics.Tick", Haptics.Tick, dt, pc)
 end
 
@@ -305,6 +310,6 @@ else
     end)
 end
 
-Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s slide=%s armsprint=%s sprint=%s jumpsprint=%s grapple=%s shield=%s debug=%s loop=%s)", VERSION,
+Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s slide=%s armsprint=%s sprint=%s jumpsprint=%s grapple=%s shield=%s savetime=%s debug=%s loop=%s)", VERSION,
     tostring(config.Hands.Enabled), tostring(config.Bow.Enabled), tostring(bowBodyOn),
-    tostring(config.Guns.Enabled), tostring(slideOn), tostring(armSprintOn), tostring(sprintOn), tostring(jumpSprintOn), tostring(grappleOn), tostring(shieldOn), tostring(Util.Debug), loopKind)
+    tostring(config.Guns.Enabled), tostring(slideOn), tostring(armSprintOn), tostring(sprintOn), tostring(jumpSprintOn), tostring(grappleOn), tostring(shieldOn), tostring(saveTimeOn), tostring(Util.Debug), loopKind)

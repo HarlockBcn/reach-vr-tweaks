@@ -9,16 +9,16 @@
 -- ============================================================
 return {
     -- Write detailed information to ReachTweaks.log and ue4ss\UE4SS.log
-    Debug = true,
+    Debug = false,
 
     -- --------------------------------------------------------
     -- FAST STARTUP
     -- --------------------------------------------------------
     Intro = {
-        SkipLogos = true,            -- skip logos + health & safety warning (~12 s)
+        SkipLogos = false,            -- skip logos + health & safety warning (~12 s)
         -- Also skip the shader warm-up level (~18 s). Starts faster, but there
         -- may be hitches the first time each effect is seen.
-        SkipShaderWarmup = true,
+        SkipShaderWarmup = false,
         TargetLevel = "P_InteractiveFrontEndMenu",  -- main menu level
     },
 
@@ -213,5 +213,18 @@ return {
         -- Undo small slowdowns in flight (measured in game the shield only
         -- loses speed on bounces, so this rarely changes anything)
         KeepSpeed = false,
+    },
+
+    -- --------------------------------------------------------
+    -- 11) SAVE TIME IN THE SAVE LIST
+    -- The menu's save slots show the date of each save; this adds
+    -- the time (read from the save file, local time). With
+    -- Debug = true the log shows [savetime] (each date text changed,
+    -- or the slot's texts when no date was found).
+    -- --------------------------------------------------------
+    SaveTime = {
+        Enabled = true,
+        Format = "%H:%M",           -- "%H:%M" = 24 h (14:35), "%I:%M %p" = 12 h (02:35 PM), "%H:%M:%S" with seconds
+        Separator = " ",            -- between the date and the time
     },
 }
