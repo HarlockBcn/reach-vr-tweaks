@@ -7,6 +7,8 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+### Added
+- MIT license (`LICENSE`), shipped in the release zip.
 
 ## [1.14.0] - 2026-10-11
 ### Changed

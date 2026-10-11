@@ -69,6 +69,10 @@ Edit `ReachTweaks\config.lua` and relaunch with `Play_ReachTweaks.bat`. While pl
 | `Intro.SkipLogos`, `Intro.SkipShaderWarmup` | Fast startup options |
 | `Debug` | Writes details to `ue4ss\Mods\ReachTweaks\ReachTweaks.log` |
 
+## License
+
+Released under the [MIT License](LICENSE). Reach is © nDreams; this mod is not affiliated with or endorsed by nDreams.
+
 ## Project layout
 
 ```
@@ -96,6 +100,7 @@ ReachTweaks/                                       the UE4SS mod (copied into th
   Scripts/spawner.lua, experiments.lua, notify.lua    test tools (F5/F6/F8, VR text)
   Scripts/diag.lua, lagprobe.lua                      debug diagnostics
 CHANGELOG.md                                       changes per version (shipped in every release)
+LICENSE                                            MIT license (shipped in every release)
 CLAUDE.md                                          working rules for Claude (not shipped)
 tools/release.ps1                                  release builder (version bump, tag, zip)
 tools/*.py                                         reverse-engineering helpers (Python)

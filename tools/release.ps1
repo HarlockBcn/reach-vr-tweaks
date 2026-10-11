@@ -40,7 +40,7 @@ $Config    = Join-Path $Root 'ReachTweaks\config.lua'
 $ReleaseOff = @('Debug', 'TestGuns', 'SkipLogos', 'SkipShaderWarmup')
 $Dist      = Join-Path $Root 'dist'
 # What a player needs; everything else (tools, RE notes) stays out
-$Payload   = @('Play_ReachTweaks.bat', 'Uninstall_ReachTweaks.bat', 'Launcher', 'ReachTweaks', 'CHANGELOG.md', 'README.md')
+$Payload   = @('Play_ReachTweaks.bat', 'Uninstall_ReachTweaks.bat', 'Launcher', 'ReachTweaks', 'CHANGELOG.md', 'README.md', 'LICENSE')
 $Utf8      = New-Object Text.UTF8Encoding($false)
 
 function Info($m) { Write-Host "[release] $m" -ForegroundColor Cyan }
