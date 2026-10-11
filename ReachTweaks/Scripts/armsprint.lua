@@ -21,10 +21,14 @@
 -- Slide (slide.lua): while it holds the sprint state (slide, crouch lock)
 -- nothing is started or stopped here. Ending the gesture is delayed by
 -- StopMs, so ducking right after swinging still counts as sprinting.
+-- Jumps (jumpsprint.lua): while JumpSprint.Holds() our sprint is not ended
+-- (the arms usually stop swinging during a jump) and a sprint the game ended
+-- on the jump is still ours once restarted.
 local Util = require("util")
 local Player = require("player")
 local Haptics = require("haptics")
 local Slide = require("slide")
+local JumpSprint = require("jumpsprint")
 
 local ArmSprint = {}
 
@@ -215,6 +219,10 @@ function ArmSprint.Tick(dtMs)
         -- The slide owns the sprint state now; it ends it itself
         if ours then Util.DLog("[armsprint] sprint handed to the slide") end
         ours = false
+        return
+    end
+    if JumpSprint.Holds() then
+        -- Jumping: keep our sprint (JumpSprint restarts it if the game ended it)
         return
     end
     if ours and not sprinting then

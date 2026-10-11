@@ -112,6 +112,7 @@ return {
         CrouchDownMs = 300,      -- time to get fully crouched when a slide starts (game: ~870; 0 = game speed)
         HapticAmplitude = 0.3,   -- light rumble while sliding (0 = off)
         CooldownMs = 600,        -- minimum time between slides
+        LandSettleMs = 500,      -- after landing, head ducks are ignored this long (landing from a height dips the head)
         ThrusterStepMs = 30,     -- internal: length of each movement push
     },
 
@@ -146,5 +147,22 @@ return {
     Sprint = {
         Enabled = true,
         SpeedMultiplier = 1.2,   -- 1.0 = original; 1.5 = 50 % faster
+    },
+
+    -- --------------------------------------------------------
+    -- 8) SPRINT THROUGH JUMPS
+    -- The game ends the sprint when you jump or land, so you walk
+    -- after every jump. This keeps sprinting through the jump and
+    -- after landing (stick click or arm swing) while the stick is
+    -- still pushed. With Debug = true the log shows [jumpsprint].
+    -- --------------------------------------------------------
+    JumpSprint = {
+        Enabled = true,
+        KeepInAir = true,        -- keep sprinting in the air too (running speed and speed lines during the jump)
+        MinStick = 0.3,          -- stick deflection needed on landing to keep sprinting (0..1)
+        LandGraceMs = 400,       -- after landing, the arm swing has this long to start again
+        ResumeWindowMs = 300,    -- stick released this long after landing = walk/stand normally
+        JumpWindowMs = 300,      -- internal: a sprint ended this soon after the jump counts as ended by the jump
+        MaxRestarts = 3,         -- internal: restarts per jump if the game keeps ending the sprint
     },
 }

@@ -23,6 +23,10 @@
 -- No sprint while crouched (button or physically): bIsSprinting is held on
 -- with Speed at walk speed, so the sprint input cannot start a real sprint
 -- (which would also stand the player up).
+-- Landing: while airborne and for LandSettleMs after landing the head height
+-- is ignored. Landing from a height dips the head relative to the feet (the
+-- game smooths the head down after the feet hit the floor), which looked like
+-- a quick duck and started a slide.
 local Util = require("util")
 local Player = require("player")
 local Haptics = require("haptics")
@@ -56,6 +60,8 @@ local locked = false
 local physCrouched = false
 local lastButtonCrouch = false
 local buttonCrouchChangedAt = -10
+local lastAirAt = -10            -- last tick spent off the ground (clock, s)
+local landMinH = nil             -- lowest head height while settling after a landing (debug)
 
 -- Crouch button
 local hooked = {}                -- hooked function paths
@@ -413,8 +419,20 @@ function Slide.Tick(dtMs)
     end
     -- While the game crouches or stands up, the head height is not the
     -- player's real one: ignore it for a moment.
+    if onGround == false then lastAirAt = clock end
+    local landing = clock - lastAirAt <= cfg.LandSettleMs / 1000
+    if Util.Debug then
+        -- Size of the landing dip (helps tune LandSettleMs)
+        if landing and onGround then
+            landMinH = math.min(landMinH or h, h)
+        elseif not landing and landMinH then
+            Util.DLog("[slide] landing settled: head dipped to %.0f cm (stand %.0f), ignored for %d ms",
+                landMinH, standRef or h, cfg.LandSettleMs)
+            landMinH = nil
+        end
+    end
     local heightSettled = not buttonCrouch and clock - buttonCrouchChangedAt > cfg.CrouchSettleMs / 1000
-        and clock - teleportAt > 1.0
+        and clock - teleportAt > 1.0 and not landing
     local stand = standRef or h
     if heightSettled and onGround then stand = standingHeight(h, dt) end
     if heightSettled then
@@ -516,6 +534,7 @@ function Slide.Init(config)
     cfg.CrouchDropCm = cfg.CrouchDropCm or 25
     cfg.CrouchWindowMs = cfg.CrouchWindowMs or 250
     cfg.CrouchSettleMs = cfg.CrouchSettleMs or 1000
+    cfg.LandSettleMs = cfg.LandSettleMs or 500
     cfg.MinSpeed = cfg.MinSpeed or 250
     cfg.SpeedBoost = cfg.SpeedBoost or 1.6
     cfg.MaxSpeed = cfg.MaxSpeed or 1600
