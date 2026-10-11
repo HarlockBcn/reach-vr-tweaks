@@ -7,6 +7,8 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+
+## [1.14.0] - 2026-10-11
 ### Changed
 - Performance: no more whole-object-list searches during play. Before, the mod searched every object in the game every frame while holding the bow (string pull), 20 times a second while holding a weapon (agile hands), every frame in the main menu (arm-swing sprint), and every 2-3 s for the shield, the gun haptic data and the grapple. Components are now found once and remembered by path; the shield is found when you grab it.
 - Performance: the pawn and its movement component are read once per frame instead of once per module; held-object refresh (backed by the grab/release hooks), keyboard polling and level checks run less often; the climbing check only queries the climbing movement mode.
