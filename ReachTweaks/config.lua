@@ -137,6 +137,8 @@ return {
         StopMs = 500,            -- swing no longer like running (e.g. hands together) this long = walk again
         MinStick = 0.3,          -- stick deflection needed (0..1); no sprint while standing still
         HapticAmplitude = 0.15,  -- short tap when the sprint starts (0 = off)
+        BlockWhileClimbing = true, -- no arm-swing sprint while a hand holds a climbable surface (objects/weapons don't count)
+        ClimbGraceMs = 500,      -- ...and this long after letting go
         WindowMs = 400,          -- internal: time window for the swing measurement
         SmoothMs = 40,           -- internal: hand velocity smoothing
         StillWindowMs = 150,     -- internal: short time window to detect stopped hands
@@ -152,7 +154,7 @@ return {
     -- --------------------------------------------------------
     Sprint = {
         Enabled = true,
-        SpeedMultiplier = 1.0,   -- 1.0 = original; 1.5 = 50 % faster
+        SpeedMultiplier = 1.2,   -- 1.0 = original; 1.5 = 50 % faster
     },
 
     -- --------------------------------------------------------

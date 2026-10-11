@@ -24,6 +24,12 @@
 -- Jumps (jumpsprint.lua): while JumpSprint.Holds() our sprint is not ended
 -- (the arms usually stop swinging during a jump) and a sprint the game ended
 -- on the jump is still ours once restarted.
+-- Climbing: moving the hands while climbing (with the stick pushed) looked
+-- like a running swing. While a hand holds a climbable surface (the game's
+-- climbing movement mode, UAtlasMovementModeClimbingBase::IsEitherHandClimbing,
+-- found among the movement component's CustomMovementModes) and for
+-- ClimbGraceMs after letting go, no sprint is started, our sprint ends and the
+-- gesture is forgotten. Holding an object or a weapon is not climbing.
 local Util = require("util")
 local Player = require("player")
 local Haptics = require("haptics")
@@ -47,6 +53,9 @@ local ours = false               -- the current sprint was started here
 local retryMs = 0                -- wait before starting again after the game ended our sprint
 local logAcc = 0
 local warned = {}
+local climbing = false
+local climbGraceMs = 0           -- time left after letting go of a climbable surface
+local modesLogged = false
 
 local function movement(pawn)
     return Util.Prop(pawn, "AtlasMovementComponentReference") or Util.Prop(pawn, "AtlasMovementComponent")
@@ -102,6 +111,32 @@ local function stickInput(mc)
     local f, r = call(mc, "GetForwardInput"), call(mc, "GetRightInput")
     if type(f) ~= "number" or type(r) ~= "number" then return nil end
     return math.sqrt(f * f + r * r)
+end
+
+-- True while either hand holds a climbable surface; nil when the climbing
+-- movement mode cannot be read. The modes are looked up every tick (UObjects
+-- are never kept across ticks).
+local function handsClimbing(mc)
+    local result = nil
+    local names = Util.Debug and not modesLogged and {} or nil
+    local ok, err = pcall(function()
+        mc.CustomMovementModes:ForEach(function(_, value)
+            local mode = value:get()
+            if names then
+                local okN, n = pcall(function() return mode:GetClass():GetFName():ToString() end)
+                names[#names + 1] = okN and n or "?"
+            end
+            local okC, v = pcall(function() return mode:IsEitherHandClimbing() end)
+            if okC and type(v) == "boolean" then
+                result = result or v
+            end
+        end)
+    end)
+    if names then
+        modesLogged = true
+        Util.DLog("[armsprint] movement modes: %s", ok and table.concat(names, ", ") or tostring(err))
+    end
+    return result
 end
 
 local function reset()
@@ -174,6 +209,7 @@ function ArmSprint.Tick(dtMs)
     local mc = pawn and movement(pawn)
     if not mc then
         ours, lastKey = false, nil
+        climbing, climbGraceMs, modesLogged = false, 0, false
         reset()
         return
     end
@@ -181,10 +217,32 @@ function ArmSprint.Tick(dtMs)
     if key ~= lastKey then
         -- New pawn (level change, respawn)
         lastKey, ours = key, false
+        climbing, climbGraceMs, modesLogged = false, 0, false
         reset()
     end
 
     local dt = dtMs / 1000
+    if cfg.BlockWhileClimbing then
+        local c = handsClimbing(mc)
+        if c == nil then warnOnce("climb", "[armsprint] climbing state not readable; sprint not blocked while climbing") end
+        c = c == true
+        if c ~= climbing then
+            climbing = c
+            Util.DLog("[armsprint] %s", c and "climbing: no sprint" or "let go of the climbable surface")
+        end
+        if c then climbGraceMs = cfg.ClimbGraceMs elseif climbGraceMs > 0 then climbGraceMs = climbGraceMs - dtMs end
+        if c or climbGraceMs > 0 then
+            -- Forget the hand movement of the climb; keep tracking positions
+            reset()
+            measure(pawn, mc, dt)
+            if Slide.HoldsSprint() then
+                ours = false
+            elseif ours and not JumpSprint.Holds() then
+                stop(mc, "climbing")
+            end
+            return
+        end
+    end
     local swinging, still, rmsL, rmsR, corr = measure(pawn, mc, dt)
     -- A stopped hand also blocks the start: the swing window still remembers
     -- the swing for a while and would turn the gesture on again every tick
@@ -260,6 +318,8 @@ function ArmSprint.Init(config)
     cfg.SmoothMs = cfg.SmoothMs or 40
     cfg.RetryMs = cfg.RetryMs or 500
     cfg.HapticAmplitude = cfg.HapticAmplitude or 0.15
+    if cfg.BlockWhileClimbing == nil then cfg.BlockWhileClimbing = true end
+    cfg.ClimbGraceMs = cfg.ClimbGraceMs or 500
     Util.Log("Arm-swing sprint enabled (min hand speed=%.0f cm/s, correlation <= %.2f, start %d ms, stop %d ms)",
         cfg.MinHandSpeed, cfg.MaxCorrelation, cfg.StartMs, cfg.StopMs)
 end
