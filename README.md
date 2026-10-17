@@ -1,5 +1,13 @@
 # ReachTweaks
 
+> [!WARNING]
+> **Disclaimer – a personal project, built with AI assistance**
+>
+> - This mod was made with the help of AI (Claude, by Anthropic): reverse engineering, code and documentation.
+> - Its only purpose is practical: to play Reach in a way I personally enjoy more. It reflects my own taste, not a judgement on how the game should be played.
+> - It is **not ready for the general public**: setup is fiddly, settings are edited by hand in a Lua file, and the features are tuned to my own setup and play style.
+> - It is unofficial and not affiliated with nDreams. Use it at your own risk; a game update may break it.
+
 A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) that:
 
 1. **Agile hands** – removes the sluggish "weight" of held weapons. The game ties a held weapon to the hand with a damped spring (`UAtlasThrowableResolver::ApplyWeight`); the mod makes that spring stiffer and critically damped while the weapon is held (×10 by default).
@@ -13,6 +21,12 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 9. **Shield throw speed** – the thrown shield flies faster: a multiplier on the game's throw speed and a minimum throw speed (optionally the peak speed of the swing and no slowdown in flight).
 10. **Fast startup** – skips the logo / health-warning splash and (optionally) the shader warm-up level.
 11. **Save time in the save list** – the menu's save slots show the date of each save; the mod adds the time (e.g. `11/10/2026 03:48`).
+
+## Gameplay video
+
+An example of playing Reach with the mod (click to watch on YouTube):
+
+[![ReachTweaks gameplay video](https://img.youtube.com/vi/cCf42VnQUi0/hqdefault.jpg)](https://www.youtube.com/watch?v=cCf42VnQUi0)
 
 ## Install & play
 
