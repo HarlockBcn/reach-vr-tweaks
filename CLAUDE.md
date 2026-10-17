@@ -9,7 +9,7 @@ Everything in the project is in English: code, comments, config and its comments
 ## Paths and workflow
 
 - Game: `D:\SteamLibrary\steamapps\common\Atlas`; mod installed in `Atlas\Binaries\Win64\ue4ss\Mods\ReachTweaks`.
-- `Launcher\ReachTweaks.ps1 -NoLaunch` reinstalls the mod into the game (fails while the game is running).
+- `Launcher\ReachTweaks.ps1 -NoLaunch` reinstalls the mod into the game (fails while the game is running). Run it with `-NonInteractive` (the PowerShell tool does): otherwise a failure opens the game-folder picker and waits for the user.
 - Mod log: `...\ue4ss\Mods\ReachTweaks\ReachTweaks.log` (appended per session; only with `Debug = true`). Verify behaviour from the log; with Debug it has `[perf]` lines every 10 s.
 - `config.lua`: the package copy (`ReachTweaks/config.lua`) is the one being edited. F7 OFF/ON in game re-reads it; `Enabled` and `Debug` need a restart.
 - Offline check without the game: Python `lupa` (Lua 5.4) is installed; compile every script with `load()` and, for logic changes, run `main.lua` against mocked UE4SS globals (`FindAllOf`, `StaticFindObject`, `RegisterHook`, `LoopInGameThreadAfterFrames`, ...).

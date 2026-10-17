@@ -19,8 +19,10 @@ A UE4SS Lua mod for **Reach** (nDreams, Steam AppID 3273480, Unreal Engine 5.4) 
 - **Play**: double-click `Play_ReachTweaks.bat`.
   - The first time it downloads **UE4SS** (open-source mod loader, ~9 MB) from its official GitHub release, verifies its SHA-256 and installs it in `Atlas\Binaries\Win64`.
   - It then copies the mod and starts Reach through Steam.
+  - If it cannot find Reach (or installing into the found folder fails), it asks you to select the game's `Atlas.exe` (in `...\steamapps\common\Atlas`) and remembers the choice.
+  - To give the game folder yourself: `Play_ReachTweaks.bat -GameDir "X:\path\steamapps\common\Atlas"` (the folder or its `Atlas.exe`).
   - Offline: put a `UE4SS_v*.zip` next to this file and the launcher will use it.
-- **Uninstall**: double-click `Uninstall_ReachTweaks.bat`. It removes only what the launcher added.
+- **Uninstall**: double-click `Uninstall_ReachTweaks.bat`. It removes only what the launcher added (and the remembered game folder).
 - While installed, the mod is also active when starting the game from Steam.
 
 ## Keys (the game window on the PC must have focus)
@@ -77,7 +79,7 @@ Released under the [MIT License](LICENSE). Reach is © nDreams; this mod is not 
 
 ```
 Play_ReachTweaks.bat / Uninstall_ReachTweaks.bat   entry points
-Launcher/ReachTweaks.ps1                           installer / launcher
+Launcher/ReachTweaks.ps1                           installer / launcher (game folder picked by hand is kept in %LOCALAPPDATA%\ReachTweaks\GameDir.txt)
 ReachTweaks/                                       the UE4SS mod (copied into the game)
   config.lua
   Scripts/main.lua        entry point, main loop, F7 toggle
@@ -111,8 +113,7 @@ tools/*.py                                         reverse-engineering helpers (
 The version lives in `ReachTweaks/Scripts/main.lua` (`local VERSION`, shown in the log) and in git tags `vX.Y.Z`; changes are listed in `CHANGELOG.md` ([Semantic Versioning](https://semver.org/): minor = new feature, patch = fix/tuning, major = incompatible config changes).
 
 1. While working, add each change under `## [Unreleased]` in `CHANGELOG.md` (in English).
-2. Commit the work, then run `powershell -File tools
-elease.ps1 -Bump minor` (or `patch` / `major`, or `-Version X.Y.Z`). It checks the tree is clean (only `CHANGELOG.md` and `ReachTweaks/config.lua` may be uncommitted), turns `Unreleased` into the new version with today's date, updates `VERSION` in `main.lua`, commits `Release vX.Y.Z`, tags it and builds the zip.
+2. Commit the work, then run `powershell -File tools\release.ps1 -Bump minor` (or `patch` / `major`, or `-Version X.Y.Z`). It checks the tree is clean (only `CHANGELOG.md` and `ReachTweaks/config.lua` may be uncommitted), turns `Unreleased` into the new version with today's date, updates `VERSION` in `main.lua`, commits `Release vX.Y.Z`, tags it and builds the zip.
 3. Output in `dist/` (ignored by git): `ReachTweaks-vX.Y.Z.zip` (a `ReachTweaks` folder with the two `.bat` files, `Launcher`, the mod, `CHANGELOG.md` and the player part of this README, i.e. everything before "Project layout") and `ReachTweaks-vX.Y.Z-notes.md` (only this version's changes, to paste on a download page).
 
 The zip is built from the git tag, so local edits, logs, `tools/` and the RE notes never end up in it. `release.ps1` without arguments rebuilds the zip of the current version. `config.lua`: a release ships the development `ReachTweaks/config.lua` as it is in the working tree (uncommitted edits included) with `Debug`, `TestGuns`, `Intro.SkipLogos` and `Intro.SkipShaderWarmup` forced to `false`; that version goes into the release commit while the working copy keeps the development values (the zip build forces them off again, also when rebuilding an older tag). A missing or duplicated setting stops the release.

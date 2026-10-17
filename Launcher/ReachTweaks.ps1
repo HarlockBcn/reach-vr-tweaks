@@ -1,6 +1,6 @@
 <#
   ReachTweaks - launcher / installer
-  - Finds Reach (Steam AppID 3273480)
+  - Finds Reach (Steam AppID 3273480); if that fails, asks for Atlas.exe with a file picker
   - Installs UE4SS the first time (official GitHub release, SHA-256 verified)
   - Copies/updates the ReachTweaks mod
   - Launches the game through Steam
@@ -9,6 +9,7 @@
     ReachTweaks.ps1              install/update and launch
     ReachTweaks.ps1 -NoLaunch    install/update only
     ReachTweaks.ps1 -Uninstall   remove everything this launcher installed
+    -GameDir <path>              game folder (or Atlas.exe) instead of detecting it
 #>
 param(
     [switch]$Uninstall,
@@ -23,10 +24,14 @@ $Ue4ssApi    = 'https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/tags/exp
 $PackageRoot = Split-Path -Parent $PSScriptRoot
 $ModSource   = Join-Path $PackageRoot $ModName
 $ManifestName = 'ReachTweaks.install.json'
+$ExeName     = 'Atlas-Win64-Shipping.exe'
+# Game folder picked by hand, remembered for the next runs
+$SavedGameDirFile = Join-Path $env:LOCALAPPDATA 'ReachTweaks\GameDir.txt'
 
 function Info($m)  { Write-Host "[ReachTweaks] $m" -ForegroundColor Cyan }
 function Ok($m)    { Write-Host "[ReachTweaks] $m" -ForegroundColor Green }
 function Warn($m)  { Write-Host "[ReachTweaks] $m" -ForegroundColor Yellow }
+function Err($m)   { Write-Host "[ReachTweaks] ERROR: $m" -ForegroundColor Red }
 
 function Get-SteamLibraries {
     $libs = @()
@@ -52,14 +57,83 @@ function Get-SteamLibraries {
     return $libs | Select-Object -Unique
 }
 
+# Accepts the game folder, Atlas.exe, Atlas-Win64-Shipping.exe or any folder in between;
+# returns ...\Atlas\Binaries\Win64 or $null.
+function Resolve-GameBin($path) {
+    if (-not $path -or -not (Test-Path -LiteralPath $path)) { return $null }
+    $dir = (Get-Item -LiteralPath $path).FullName
+    if (Test-Path -LiteralPath $dir -PathType Leaf) { $dir = Split-Path -Parent $dir }
+    for ($i = 0; $dir -and $i -lt 4; $i++) {
+        foreach ($bin in $dir, (Join-Path $dir 'Binaries\Win64'), (Join-Path $dir 'Atlas\Binaries\Win64')) {
+            if (Test-Path -LiteralPath (Join-Path $bin $ExeName)) { return $bin }
+        }
+        $dir = Split-Path -Parent $dir
+    }
+    return $null
+}
+
+# Interactive only: a non-interactive shell (scripts, automation) would hang on a dialog.
+function Test-CanPrompt {
+    if (-not [Environment]::UserInteractive) { return $false }
+    return -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-noni' })
+}
+
+function Show-Message($text, $buttons = 'OK', $icon = 'Information') {
+    Add-Type -AssemblyName System.Windows.Forms
+    $owner = New-Object Windows.Forms.Form -Property @{ TopMost = $true }
+    try { return [Windows.Forms.MessageBox]::Show($owner, $text, 'ReachTweaks', $buttons, $icon) }
+    finally { $owner.Dispose() }
+}
+
+# File picker for Atlas.exe / Atlas-Win64-Shipping.exe; returns the Win64 folder or $null if cancelled.
+function Select-GameManually($reason) {
+    if (-not (Test-CanPrompt)) { return $null }
+    if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
+        Warn 'Cannot show the file picker in this PowerShell (needs -STA).'
+        return $null
+    }
+    Add-Type -AssemblyName System.Windows.Forms
+    Warn $reason
+    if ((Show-Message "$reason`n`nSelect Reach's executable (Atlas.exe in the game folder, usually ...\steamapps\common\Atlas)." 'OKCancel') -ne 'OK') {
+        return $null
+    }
+    $dlg = New-Object Windows.Forms.OpenFileDialog -Property @{
+        Title  = "Select Reach's executable (Atlas.exe)"
+        Filter = 'Reach (Atlas.exe, Atlas-Win64-Shipping.exe)|Atlas.exe;Atlas-Win64-Shipping.exe|Programs (*.exe)|*.exe'
+    }
+    $common = Get-SteamLibraries | ForEach-Object { Join-Path $_ 'steamapps\common' } |
+        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($common) { $dlg.InitialDirectory = $common }
+    $owner = New-Object Windows.Forms.Form -Property @{ TopMost = $true }
+    try {
+        while ($dlg.ShowDialog($owner) -eq 'OK') {
+            $bin = Resolve-GameBin $dlg.FileName
+            if ($bin) {
+                try {
+                    New-Item -ItemType Directory -Force -Path (Split-Path $SavedGameDirFile) | Out-Null
+                    [IO.File]::WriteAllText($SavedGameDirFile, $bin)
+                } catch { Warn "Could not remember the game folder: $($_.Exception.Message)" }
+                return $bin
+            }
+            Show-Message "Reach was not found next to:`n$($dlg.FileName)`n`nSelect Atlas.exe in the game folder." 'OK' 'Warning' | Out-Null
+            $dlg.InitialDirectory = Split-Path -Parent $dlg.FileName
+        }
+        return $null
+    } finally { $owner.Dispose(); $dlg.Dispose() }
+}
+
 function Find-Game {
     if ($GameDir) { $cands = @($GameDir) } else {
-        $cands = Get-SteamLibraries | ForEach-Object { Join-Path $_ 'steamapps\common\Atlas' }
+        $cands = @()
+        if (Test-Path -LiteralPath $SavedGameDirFile) { $cands += (Get-Content -LiteralPath $SavedGameDirFile -Raw).Trim() }
+        $cands += Get-SteamLibraries | ForEach-Object { Join-Path $_ 'steamapps\common\Atlas' }
     }
     foreach ($c in $cands) {
-        $bin = Join-Path $c 'Atlas\Binaries\Win64'
-        if (Test-Path (Join-Path $bin 'Atlas-Win64-Shipping.exe')) { return $bin }
+        $bin = Resolve-GameBin $c
+        if ($bin) { return $bin }
     }
+    $bin = Select-GameManually 'Reach was not found automatically.'
+    if ($bin) { return $bin }
     throw 'Reach not found. Use: ReachTweaks.ps1 -GameDir "X:\path\steamapps\common\Atlas"'
 }
 
@@ -202,6 +276,8 @@ function Uninstall-All($bin) {
     }
     $mf = Join-Path $bin $ManifestName
     if (Test-Path $mf) { Remove-Item $mf -Force }
+    $saved = Split-Path $SavedGameDirFile
+    if (Test-Path -LiteralPath $saved) { Remove-Item -LiteralPath $saved -Recurse -Force }
     Ok 'Uninstall complete. Reach is back to its original state.'
 }
 
@@ -223,19 +299,29 @@ function Wait-ForModLog($bin) {
 
 # ------------------------------------------------------------------
 try {
-    $bin = Find-Game
-    Info "Reach found at $bin"
-
     if (Get-Process -Name 'Atlas-Win64-Shipping' -ErrorAction SilentlyContinue) {
         throw 'Reach is running. Close it before installing or uninstalling.'
     }
 
-    if ($Uninstall) { Uninstall-All $bin; exit 0 }
-
-    $manifest = Read-Manifest $bin
-    if (-not (Get-Ue4ssModsDir $bin)) { Install-Ue4ss $bin $manifest }
-    Install-Mod $bin $manifest
-    Save-Manifest $bin $manifest
+    $bin = Find-Game
+    # On an error, offer to pick the game by hand and try again (the detected folder may be wrong)
+    while ($true) {
+        Info "Reach found at $bin"
+        try {
+            if ($Uninstall) { Uninstall-All $bin; exit 0 }
+            $manifest = Read-Manifest $bin
+            if (-not (Get-Ue4ssModsDir $bin)) { Install-Ue4ss $bin $manifest }
+            Install-Mod $bin $manifest
+            Save-Manifest $bin $manifest
+            break
+        } catch {
+            $msg = $_.Exception.Message
+            Err $msg
+            $new = Select-GameManually "Error in $bin`n$msg`n`nIf this is not Reach's folder, select the game to try again."
+            if (-not $new) { exit 1 }
+            $bin = $new
+        }
+    }
 
     if (-not $NoLaunch) {
         Info 'Launching Reach through Steam...'
@@ -244,6 +330,6 @@ try {
     }
     exit 0
 } catch {
-    Write-Host "[ReachTweaks] ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    Err $_.Exception.Message
     exit 1
 }
