@@ -125,7 +125,8 @@ function New-Release($cur, $new) {
     $tmpCfg = [IO.Path]::GetTempFileName()
     try {
         [IO.File]::WriteAllText($tmpCfg, $cfg, $Utf8)
-        $hash = (Invoke-Git hash-object -w "--path=$ConfigRel" -- $tmpCfg)[0]
+        # @(): a one-line result comes back as a string, and [0] would be its first character
+        $hash = @(Invoke-Git hash-object -w "--path=$ConfigRel" -- $tmpCfg)[0]
         Invoke-Git update-index --cacheinfo "100644,$hash,$ConfigRel" | Out-Null
     } finally {
         Remove-Item $tmpCfg -ErrorAction SilentlyContinue
