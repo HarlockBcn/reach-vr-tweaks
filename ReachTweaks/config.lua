@@ -28,7 +28,7 @@ return {
     -- one, F8 cycles weight-stiffness experiments.
     -- The game window on the PC must have focus.
     -- --------------------------------------------------------
-    TestGuns = true,
+    TestGuns = false,
 
     -- --------------------------------------------------------
     -- 1) AGILE HANDS

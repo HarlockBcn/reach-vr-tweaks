@@ -7,6 +7,8 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+
+## [1.14.1] - 2026-10-17
 ### Added
 - MIT license (`LICENSE`), shipped in the release zip.
 - Launcher: if Reach is not found automatically, or installing into the detected folder fails, a file picker asks for the game's `Atlas.exe` (or `Atlas-Win64-Shipping.exe`) and the folder is worked out from it. The choice is remembered in `%LOCALAPPDATA%\ReachTweaks\GameDir.txt` (removed by the uninstaller).
