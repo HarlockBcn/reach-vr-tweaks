@@ -206,8 +206,8 @@ return {
     -- --------------------------------------------------------
     Shield = {
         Enabled = true,
-        ThrowSpeedMultiplier = 1.75, -- multiplier on the game's throw speed (1.0 = original)
-        MinThrowSpeed = 1000,        -- a thrown shield leaves at least this fast (0 = off)
+        ThrowSpeedMultiplier = 1.55, -- multiplier on the game's throw speed (1.0 = original)
+        MinThrowSpeed = 800,         -- a thrown shield leaves at least this fast (0 = off)
         -- Use the fastest speed of the swing when it beats the game's speed
         -- (measured in game it is lower, ~650-760 cm/s, so it rarely changes anything)
         UsePeakSpeed = true,
@@ -215,6 +215,12 @@ return {
         -- Undo small slowdowns in flight (measured in game the shield only
         -- loses speed on bounces, so this rarely changes anything)
         KeepSpeed = false,
+        -- The game stows the shield as soon as the hand holding it reaches
+        -- the shoulder. With this on, it stays in the hand while the grip
+        -- is held and is stowed when you let go of the grip at the shoulder.
+        StowOnRelease = true,
+        StowZoneCm = 25,             -- letting go within this distance of where the game tried to stow it stows it
+        StowMaxSpeed = 300,          -- ...if the hand moves slower than this (faster = a throw)
     },
 
     -- --------------------------------------------------------
