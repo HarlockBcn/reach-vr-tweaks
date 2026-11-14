@@ -7,6 +7,10 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+### Added
+- Shield: no more stowing by accident. The game stows the shield as soon as the hand holding it reaches the shoulder; now it stays in the hand while the grip is held and is stowed when you let go of the grip at the shoulder (`Shield.StowOnRelease`, `StowZoneCm`, `StowMaxSpeed`). With Debug the log shows the grip keys found, the shield state changes and each stow blocked.
+### Changed
+- Shield throw speed defaults: `ThrowSpeedMultiplier` 1.55 (was 1.75) and `MinThrowSpeed` 800 cm/s (was 1000).
 
 ## [1.14.1] - 2026-10-17
 ### Added
