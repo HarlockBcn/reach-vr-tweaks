@@ -7,14 +7,21 @@
 -- owner's damage delegates, so hooking them costs nothing until damage
 -- happens. They run for every damageable actor: only the player pawn counts.
 -- AActor::TakeDamage broadcasts the point/radial event before the generic
--- one, so the same hit arrives twice; a hit within MinIntervalMs of the last
--- kick only plays if it is clearly stronger.
+-- one, so the same hit arrives twice: a generic event in the same tick as a
+-- point/radial one is the same hit and is not counted again.
 --
--- Strength: Damage / MaxHealth of the component (FullAtFraction of the health
--- = MaxAmplitude), or Damage / FullDamage if MaxHealth cannot be read.
+-- Bursts (seen in game, 2026-11-15): pellet weapons hit 2-4 times per frame
+-- for ~70 ms (10.4 damage each, player MaxHealth 500). Hits within
+-- MinIntervalMs of the first one add up: the first kicks at once and the kick
+-- is topped up whenever the summed damage makes it clearly stronger.
+--
+-- Strength: summed damage / MaxHealth of the component (FullAtFraction of the
+-- health = MaxAmplitude), or damage / FullDamage if MaxHealth cannot be read.
 -- Direction (Directional): the side of the hit relative to where the head
 -- looks; the hand on the far side gets a weaker kick.
---   point:  HitLocation - pawn location (fallback: -ShotFromDirection)
+--   point:  -ShotFromDirection (where the shot came from; in game it agreed
+--           with the hit location whenever both were clear and was clear more
+--           often); fallback HitLocation - pawn location
 --   radial: Origin - pawn location
 --   any:    DamageCauser location - pawn location (if far enough)
 local Util = require("util")
@@ -26,8 +33,8 @@ local DamageHaptics = {}
 local COMPONENT = "/Script/Atlas.AtlasDamageableComponent"
 
 local cfg
-local lastKickAt = -1e9
-local lastKickAmp = 0
+local burst = nil           -- { start, damage, hits, sideSum, sideW, played } hits being summed
+local lastSpecificAt = nil  -- nowMs of the last point/radial hit (its generic twin follows)
 local nowMs = 0
 local otherLogged = 0       -- debug: hits on other actors logged (proves the hooks fire)
 
@@ -103,32 +110,45 @@ local function maxHealthOf(comp)
     return nil
 end
 
-local function kick(kind, damage, comp, side, how)
-    local maxH = maxHealthOf(comp)
+local function amplitudeOf(damage, maxH)
     local frac
     if maxH then
         frac = damage / (maxH * math.max(cfg.FullAtFraction, 1e-3))
     else
         frac = damage / math.max(cfg.FullDamage, 1e-3)
     end
-    local amp = cfg.MinAmplitude + (cfg.MaxAmplitude - cfg.MinAmplitude) * Util.Clamp(frac, 0, 1)
+    return cfg.MinAmplitude + (cfg.MaxAmplitude - cfg.MinAmplitude) * Util.Clamp(frac, 0, 1)
+end
 
-    if nowMs - lastKickAt < cfg.MinIntervalMs and amp < lastKickAmp + 0.1 then
-        Util.DLog("[damagehaptics] %s %.1f dmg: skipped (kick %.0f ms ago)", kind, damage, nowMs - lastKickAt)
-        return
+local function kick(kind, damage, comp, side, how)
+    if burst == nil or nowMs - burst.start >= cfg.MinIntervalMs then
+        burst = { start = nowMs, damage = 0, hits = 0, sideSum = 0, sideW = 0, played = 0 }
     end
+    burst.damage = burst.damage + damage
+    burst.hits = burst.hits + 1
+    if side then
+        burst.sideSum = burst.sideSum + side * damage
+        burst.sideW = burst.sideW + damage
+    end
+    local maxH = maxHealthOf(comp)
+    local amp = amplitudeOf(burst.damage, maxH)
+    -- First hit of a burst, or the sum makes it clearly stronger: (re)kick
+    if burst.played > 0 and amp < burst.played + 0.1 then return end
+    local bside = burst.sideW > 0 and burst.sideSum / burst.sideW or nil
 
     local left, right = amp, amp
-    if cfg.Directional and side then
+    if cfg.Directional and bside then
         local s = cfg.DirectionStrength
-        left = amp * (1 - s * math.max(0, side))     -- hit from the right: left weaker
-        right = amp * (1 - s * math.max(0, -side))   -- hit from the left: right weaker
+        left = amp * (1 - s * math.max(0, bside))     -- hit from the right: left weaker
+        right = amp * (1 - s * math.max(0, -bside))   -- hit from the left: right weaker
     end
-    Haptics.Pulse(Haptics.LEFT, left, cfg.DurationMs, 0, cfg.Frequency)
-    Haptics.Pulse(Haptics.RIGHT, right, cfg.DurationMs, 0, cfg.Frequency)
-    lastKickAt, lastKickAmp = nowMs, amp
-    Util.DLog("[damagehaptics] %s %.1f dmg (max health %s) from %s (%s) -> L %.2f R %.2f",
-        kind, damage, maxH and string.format("%.0f", maxH) or "?", sideText(side), how, left, right)
+    local tail = cfg.TailFraction
+    Haptics.Pulse(Haptics.LEFT, left, cfg.DurationMs, left * tail, cfg.Frequency)
+    Haptics.Pulse(Haptics.RIGHT, right, cfg.DurationMs, right * tail, cfg.Frequency)
+    burst.played = amp
+    Util.DLog("[damagehaptics] %s %.1f dmg (%s%.1f in %d hits, max health %s) from %s (%s) -> L %.2f R %.2f",
+        kind, damage, burst.hits > 1 and "burst " or "", burst.damage, burst.hits,
+        maxH and string.format("%.0f", maxH) or "?", sideText(bside), how, left, right)
 end
 
 -- Common entry: filters the player and bad values
@@ -150,24 +170,22 @@ end
 local function onPoint(selfP, damagedActorP, damageP, _instigatedByP, hitLocationP, _hitCompP, _boneP, shotDirP)
     local comp, actor, damage = get(selfP), get(damagedActorP), num(get(damageP))
     if not hit("point", comp, actor, damage) then return end
-    local loc = actorLocation(actor)
-    local hl, sd = vec(get(hitLocationP)), vec(get(shotDirP))
-    local side, how = nil, "no direction"
-    if loc and hl then
-        side = sideOf({ X = hl.X - loc.X, Y = hl.Y - loc.Y }, 5)
+    lastSpecificAt = nowMs
+    local sd = vec(get(shotDirP))
+    local side = sd and sideOf({ X = -sd.X, Y = -sd.Y }) or nil
+    local how = side and "shot direction" or "no direction"
+    if side == nil then
+        local loc, hl = actorLocation(actor), vec(get(hitLocationP))
+        side = (loc and hl) and sideOf({ X = hl.X - loc.X, Y = hl.Y - loc.Y }, 5) or nil
         if side then how = "hit location" end
     end
-    local shotSide = sd and sideOf({ X = -sd.X, Y = -sd.Y }) or nil
-    if side == nil and shotSide then side, how = shotSide, "shot direction" end
-    -- Both estimates logged while the direction convention is checked in game
-    if Util.Debug then how = string.format("%s; hit-location side %s, shot-direction side %s", how,
-        sideText(loc and hl and sideOf({ X = hl.X - loc.X, Y = hl.Y - loc.Y }, 5) or nil), sideText(shotSide)) end
     kick("point", damage, comp, side, how)
 end
 
 local function onRadial(selfP, damagedActorP, damageP, _damageTypeP, originP)
     local comp, actor, damage = get(selfP), get(damagedActorP), num(get(damageP))
     if not hit("radial", comp, actor, damage) then return end
+    lastSpecificAt = nowMs
     local loc, o = actorLocation(actor), vec(get(originP))
     local side = (loc and o) and sideOf({ X = o.X - loc.X, Y = o.Y - loc.Y }, 20) or nil
     kick("radial", damage, comp, side, side and "explosion origin" or "no direction")
@@ -176,6 +194,8 @@ end
 local function onAny(selfP, damagedActorP, damageP, _damageTypeP, _instigatedByP, causerP)
     local comp, actor, damage = get(selfP), get(damagedActorP), num(get(damageP))
     if not hit("any", comp, actor, damage) then return end
+    -- Same tick as a point/radial hit: the generic twin of that hit
+    if lastSpecificAt == nowMs then return end
     local loc, c = actorLocation(actor), actorLocation(get(causerP))
     local side = (loc and c) and sideOf({ X = c.X - loc.X, Y = c.Y - loc.Y }, 50) or nil
     kick("any", damage, comp, side, side and ("causer " .. nameOf(get(causerP))) or "no direction")
@@ -187,11 +207,12 @@ end
 
 function DamageHaptics.Init(config)
     cfg = config
-    cfg.MinAmplitude = cfg.MinAmplitude or 0.35
+    cfg.MinAmplitude = cfg.MinAmplitude or 0.5
     cfg.MaxAmplitude = cfg.MaxAmplitude or 1.0
-    cfg.FullAtFraction = cfg.FullAtFraction or 0.25
-    cfg.FullDamage = cfg.FullDamage or 25
-    cfg.DurationMs = cfg.DurationMs or 150
+    cfg.FullAtFraction = cfg.FullAtFraction or 0.15
+    cfg.FullDamage = cfg.FullDamage or 75
+    cfg.DurationMs = cfg.DurationMs or 200
+    cfg.TailFraction = Util.Clamp(cfg.TailFraction or 0.3, 0, 1)
     cfg.Frequency = cfg.Frequency or 1.0
     cfg.MinIntervalMs = cfg.MinIntervalMs or 80
     if cfg.Directional == nil then cfg.Directional = true end

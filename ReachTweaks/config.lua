@@ -242,16 +242,18 @@ return {
     -- on the controllers, stronger with more damage. With
     -- Directional, the controller on the side the hit comes from
     -- vibrates more. With Debug = true the log shows [damagehaptics]
-    -- (each hit: damage, side, amplitudes).
+    -- (each kick: damage, burst total, side, amplitudes).
+    -- Your max health is 500: a pellet hit is ~10, a heavy hit ~77.
     -- --------------------------------------------------------
     DamageHaptics = {
         Enabled = true,
-        MinAmplitude = 0.35,        -- kick of the smallest hit (0-1)
+        MinAmplitude = 0.5,         -- kick of the smallest hit (0-1)
         MaxAmplitude = 1.0,         -- kick of a big hit (0-1)
-        FullAtFraction = 0.25,      -- a hit taking this share of max health gets MaxAmplitude
-        DurationMs = 150,           -- the kick fades out over this time
+        FullAtFraction = 0.15,      -- damage of this share of max health (75 of 500) gets MaxAmplitude
+        DurationMs = 200,           -- length of the kick
+        TailFraction = 0.3,         -- the kick fades to this share of its strength (0 = to nothing)
         Directional = true,         -- the far-side controller vibrates less
         DirectionStrength = 0.6,    -- 0 = both equal, 1 = far side silent on a hit from the side
-        MinIntervalMs = 80,         -- at most one kick per this time (bursts stay distinct)
+        MinIntervalMs = 80,         -- hits within this time add up into one kick (pellet bursts)
     },
 }
