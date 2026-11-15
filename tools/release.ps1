@@ -131,8 +131,18 @@ function New-Release($cur, $new) {
     } finally {
         Remove-Item $tmpCfg -ErrorAction SilentlyContinue
     }
-    Invoke-Git commit -q -m "Release v$new" -m $notes | Out-Null
-    Invoke-Git tag -a "v$new" -m "ReachTweaks v$new" -m $notes | Out-Null
+    # Messages through a file: Windows PowerShell 5.1 breaks native arguments
+    # that contain double quotes (a changelog line with "..." split the message)
+    $msgFile = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($msgFile, "Release v$new`n`n$notes`n", $Utf8)
+        # verbatim: keep the "### Fixed" headings (git strips "#" lines by default)
+        Invoke-Git commit -q --cleanup=verbatim -F $msgFile | Out-Null
+        [IO.File]::WriteAllText($msgFile, "ReachTweaks v$new`n`n$notes`n", $Utf8)
+        Invoke-Git tag -a "v$new" --cleanup=verbatim -F $msgFile | Out-Null
+    } finally {
+        Remove-Item $msgFile -ErrorAction SilentlyContinue
+    }
     Ok "Version $cur -> $new, committed and tagged v$new"
 }
 
