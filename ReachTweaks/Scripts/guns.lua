@@ -109,8 +109,13 @@ function Guns.ScaleNativeHaptics(gun)
         Util.SafeCall(function()
             local eff = d[prop]
             local s = eff.HapticEffectScale
-            eff.HapticEffectScale = s * scale
-            Util.DLog("GunData %s.%s scale %.2f -> %.2f", path, prop, s, s * scale)
+            -- A scale the mod wrote earlier (not undone, e.g. F7 OFF while the
+            -- asset was not found) maps back to the game's value
+            local id = Util.ValueId(path, prop .. ".HapticEffectScale")
+            local base = Util.GameValue(id, s)
+            eff.HapticEffectScale = base * scale
+            Util.NoteWritten(id, base * scale, base)
+            Util.DLog("GunData %s.%s scale %.2f -> %.2f", path, prop, base, base * scale)
         end)
     end
 end
@@ -123,7 +128,8 @@ function Guns.RestoreNative()
             for _, prop in ipairs(NATIVE_EFFECTS) do
                 Util.SafeCall(function()
                     local eff = d[prop]
-                    eff.HapticEffectScale = eff.HapticEffectScale / scale
+                    local id = Util.ValueId(path, prop .. ".HapticEffectScale")
+                    eff.HapticEffectScale = Util.GameValue(id, eff.HapticEffectScale)
                 end)
             end
         end

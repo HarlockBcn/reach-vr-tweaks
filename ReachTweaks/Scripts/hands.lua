@@ -49,14 +49,21 @@ local function apply(obj, label)
         local cur = getNum(obj, prop)
         if cur ~= nil then
             local mine = applied[key][prop]
-            -- first time, or the game rewrote the value: that becomes the new original
+            -- first time, or the game rewrote the value: that becomes the new
+            -- original, unless it is a value the mod wrote itself earlier (an
+            -- object restored without being found again keeps the scaled
+            -- value: scaling it again would multiply it every grab)
             if mine == nil or math.abs(cur - mine) > 1e-4 then
-                orig[key][prop] = cur
-                local new = op.set or (cur * op.mul)
+                patched[key] = patched[key] or Util.Path(obj) or true
+                local id = Util.ValueId(patched[key] == true and key or patched[key], prop)
+                local base = Util.GameValue(id, cur)
+                orig[key][prop] = base
+                local new = op.set or (base * op.mul)
                 if pcall(function() obj[prop] = new end) then
                     applied[key][prop] = new
-                    patched[key] = patched[key] or Util.Path(obj) or true
-                    Util.DLog("%s %s: %.3f -> %.3f", label, prop, cur, new)
+                    Util.NoteWritten(id, new, base)
+                    Util.DLog("%s %s: %.3f -> %.3f%s", label, prop, base, new,
+                        base ~= cur and string.format(" (found at %.3f, set by the mod)", cur) or "")
                 end
             end
         end

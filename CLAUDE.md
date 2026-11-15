@@ -23,6 +23,7 @@ Everything in the project is in English: code, comments, config and its comments
 - **No `FindAllOf` / `FindObjects` in per-tick code or on short timers**: they walk the whole object list (milliseconds). Find once and keep the path (`Util.FindOwnedByCached`), or discover objects from events (e.g. a hand grabbing them).
 - Per-tick pawn data: `Player.GetPawn()`, `Player.Movement()`, `Player.PawnKey()` (cached for one tick between `Player.BeginFrame`/`EndFrame`).
 - Avoid calls that fail every tick (a failed `pcall` builds an error each time); find which objects answer once and only call those.
+- **Never scale a value the mod wrote.** Scaled game values survive pawn swaps (pause menu) and failed restores; read the base with `Util.GameValue(Util.ValueId(path, prop), cur)` and record writes with `Util.NoteWritten` (the sprint compounded to 847 cm/s without it).
 - Lua pitfall: `cond and nil or x` is always `x`.
 - Never dump every property value of a Blueprint object (crashed the game); list names only.
 

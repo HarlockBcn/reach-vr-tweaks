@@ -216,6 +216,52 @@ function Util.Prop(obj, name)
     return nil
 end
 
+-- Values the mod wrote into game properties, per object path + property, for
+-- the whole session. A value read back that the mod wrote itself must never be
+-- taken as the game's own value: scaling it again made the sprint faster on
+-- every visit to the pause menu (the menu swaps the pawn, the module forgot
+-- the original, and then read its own 588 cm/s as the game's speed).
+local written = {}     -- [id] = { { value, base }, ... }
+local MAX_WRITTEN = 8
+
+local function near(a, b)
+    return math.abs(a - b) <= math.max(1e-3, math.abs(b) * 1e-5)   -- float32 round trip
+end
+
+-- Id of a property of an object (path is the object's full path, without class)
+function Util.ValueId(path, prop)
+    return tostring(path) .. "|" .. prop
+end
+
+-- The game's value behind cur: the base the mod scaled when it wrote cur, or
+-- cur itself if the mod never wrote that value there
+function Util.GameValue(id, cur)
+    local list = written[id]
+    if list then
+        for _, w in ipairs(list) do
+            if near(cur, w.value) then return w.base end
+        end
+    end
+    return cur
+end
+
+-- Records that the mod wrote value (computed from the game's base) into id
+function Util.NoteWritten(id, value, base)
+    local list = written[id]
+    if not list then
+        list = {}
+        written[id] = list
+    end
+    for i, w in ipairs(list) do
+        if near(value, w.value) then
+            table.remove(list, i)
+            break
+        end
+    end
+    table.insert(list, 1, { value = value, base = base })
+    if #list > MAX_WRITTEN then list[#list] = nil end
+end
+
 -- Delayed calls run from the game-thread main loop (UE4SS ExecuteWithDelay
 -- runs its callback on another thread, which is not safe with our Lua).
 local timers = {}

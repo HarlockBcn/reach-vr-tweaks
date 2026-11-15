@@ -55,10 +55,18 @@ local function applyOp(op)
                 local ok, cur = pcall(function() return obj[op.prop] end)
                 if ok and type(cur) == "number" then
                     orig[key] = orig[key] or {}
-                    if orig[key][op.prop] == nil then orig[key][op.prop] = cur end
+                    local id = nil
+                    if orig[key][op.prop] == nil then
+                        -- a value the mod wrote earlier maps back to the game's
+                        id = Util.ValueId(Util.Path(obj) or key, op.prop)
+                        orig[key][op.prop] = Util.GameValue(id, cur)
+                    end
                     local want = op.set or (orig[key][op.prop] * op.mul)
                     if math.abs(cur - want) > 1e-4 then
-                        pcall(function() obj[op.prop] = want end)
+                        if pcall(function() obj[op.prop] = want end) then
+                            id = id or Util.ValueId(Util.Path(obj) or key, op.prop)
+                            Util.NoteWritten(id, want, orig[key][op.prop])
+                        end
                     end
                 end
             end

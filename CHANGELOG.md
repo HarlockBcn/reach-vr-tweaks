@@ -8,6 +8,7 @@ Add new entries under **Unreleased**; `tools/release.ps1` turns that section int
 
 ## [Unreleased]
 ### Fixed
+- Sprint speed grew on every visit to the pause menu (490 → 588 → 706 → 847 cm/s with x1.2): the menu swaps the player pawn, the mod forgot the game's speed and, on return, scaled its own value again. The mod now remembers every value it writes (per object and property, for the whole session) and never takes one of them as the game's value. The same protection covers the weapon weight stiffness (agile hands), the gun vibration scale and the TestGuns experiments, which could compound the same way when an object was not found again to restore it.
 - Save time: slots written with the game's "Backup Save" got no time. A backup is a byte copy of the active save, so it keeps the time of the original save while the menu shows the date of the copy. The mod now records the time of each backup (in `%LOCALAPPDATA%\Atlas\Saved\ReachTweaks_SaveTimes.txt`, removed by the uninstaller) and shows it. Backups made before this version still get no time until they are overwritten.
 
 ## [1.15.0] - 2026-11-14
