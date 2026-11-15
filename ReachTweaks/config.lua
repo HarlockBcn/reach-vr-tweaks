@@ -235,4 +235,23 @@ return {
         Format = "%H:%M",           -- "%H:%M" = 24 h (14:35), "%I:%M %p" = 12 h (02:35 PM), "%H:%M:%S" with seconds
         Separator = " ",            -- between the date and the time
     },
+
+    -- --------------------------------------------------------
+    -- 12) DAMAGE HAPTICS
+    -- The game does not vibrate when you are hurt; this adds a kick
+    -- on the controllers, stronger with more damage. With
+    -- Directional, the controller on the side the hit comes from
+    -- vibrates more. With Debug = true the log shows [damagehaptics]
+    -- (each hit: damage, side, amplitudes).
+    -- --------------------------------------------------------
+    DamageHaptics = {
+        Enabled = true,
+        MinAmplitude = 0.35,        -- kick of the smallest hit (0-1)
+        MaxAmplitude = 1.0,         -- kick of a big hit (0-1)
+        FullAtFraction = 0.25,      -- a hit taking this share of max health gets MaxAmplitude
+        DurationMs = 150,           -- the kick fades out over this time
+        Directional = true,         -- the far-side controller vibrates less
+        DirectionStrength = 0.6,    -- 0 = both equal, 1 = far side silent on a hit from the side
+        MinIntervalMs = 80,         -- at most one kick per this time (bursts stay distinct)
+    },
 }

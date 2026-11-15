@@ -103,6 +103,7 @@ local JumpSprint = require("jumpsprint")
 local Grapple = require("grapple")
 local Shield = require("shield")
 local SaveTime = require("savetime")
+local DamageHaptics = require("damagehaptics")
 local Keys = require("keys")
 
 Player.Init()
@@ -125,6 +126,11 @@ local shieldOn = config.Shield ~= nil and config.Shield.Enabled == true
 if shieldOn then Shield.Init(config.Shield) end
 local saveTimeOn = config.SaveTime ~= nil and config.SaveTime.Enabled == true
 if saveTimeOn then SaveTime.Init(config.SaveTime) end
+local damageHapticsOn = config.DamageHaptics ~= nil and config.DamageHaptics.Enabled == true
+if damageHapticsOn then
+    DamageHaptics.Init(config.DamageHaptics)
+    DamageHaptics.Hook()
+end
 Intro.Init(config.Intro or {})
 local Experiments = nil
 if config.TestGuns then
@@ -163,6 +169,7 @@ local function reloadConfig()
     if jumpSprintOn then JumpSprint.Init(config.JumpSprint) end
     if grappleOn then Grapple.Init(config.GrappleView) end
     if shieldOn then Shield.Init(config.Shield) end
+    if damageHapticsOn then DamageHaptics.Init(config.DamageHaptics) end
     Util.Log("Config reloaded from %s", tostring(configPath))
     return true
 end
@@ -326,6 +333,7 @@ local function tickBody()
     if active and grappleOn then step("Grapple.Tick", Grapple.Tick, dt) end
     if active and shieldOn then step("Shield.Tick", Shield.Tick, dt) end
     if active and saveTimeOn then step("SaveTime.Tick", SaveTime.Tick, dt) end
+    if active and damageHapticsOn then step("DamageHaptics.Tick", DamageHaptics.Tick, dt) end
     step("Haptics.Tick", Haptics.Tick, dt, pc)
 end
 
@@ -360,6 +368,6 @@ else
     end)
 end
 
-Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s slide=%s armsprint=%s sprint=%s jumpsprint=%s grapple=%s shield=%s savetime=%s debug=%s loop=%s)", VERSION,
+Util.Log("ReachTweaks %s loaded (hands=%s bow=%s bowbody=%s guns=%s slide=%s armsprint=%s sprint=%s jumpsprint=%s grapple=%s shield=%s savetime=%s damagehaptics=%s debug=%s loop=%s)", VERSION,
     tostring(config.Hands.Enabled), tostring(config.Bow.Enabled), tostring(bowBodyOn),
-    tostring(config.Guns.Enabled), tostring(slideOn), tostring(armSprintOn), tostring(sprintOn), tostring(jumpSprintOn), tostring(grappleOn), tostring(shieldOn), tostring(saveTimeOn), tostring(Util.Debug), loopKind)
+    tostring(config.Guns.Enabled), tostring(slideOn), tostring(armSprintOn), tostring(sprintOn), tostring(jumpSprintOn), tostring(grappleOn), tostring(shieldOn), tostring(saveTimeOn), tostring(damageHapticsOn), tostring(Util.Debug), loopKind)
