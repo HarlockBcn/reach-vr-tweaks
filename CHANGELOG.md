@@ -7,6 +7,8 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+### Fixed
+- Save time: slots written with the game's "Backup Save" got no time. A backup is a byte copy of the active save, so it keeps the time of the original save while the menu shows the date of the copy. The mod now records the time of each backup (in `%LOCALAPPDATA%\Atlas\Saved\ReachTweaks_SaveTimes.txt`, removed by the uninstaller) and shows it. Backups made before this version still get no time until they are overwritten.
 
 ## [1.15.0] - 2026-11-14
 ### Added

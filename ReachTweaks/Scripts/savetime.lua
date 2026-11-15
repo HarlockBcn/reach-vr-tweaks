@@ -25,6 +25,14 @@
 -- In each slot the text block whose text contains the save's year and day
 -- (and no time yet) gets " HH:MM". No UObject is kept across ticks: text
 -- blocks are remembered by path (StaticFindObject) to restore them on F7 OFF.
+--
+-- Backups: the menu date is the save FILE's modification time (UTC), not the
+-- Timestamp inside it. UAtlasCoreLibrary::BackupSaveGameToSlot copies the
+-- active save byte for byte into another slot, so the copy keeps the old
+-- Timestamp but the menu shows the date of the copy. Lua cannot read file
+-- times, so the time of each backup is recorded when the game calls that
+-- function and kept in BACKUP_FILE ("slot ticks secs" per line); a slot whose
+-- Timestamp still matches its record shows the backup time.
 local Util = require("util")
 
 local SaveTime = {}
@@ -55,10 +63,24 @@ local fileCache = {}         -- slot -> { at, info }
 local changed = {}           -- text block path -> { orig, new }
 local lastSeen = {}          -- slot -> last texts logged (debug)
 
-local function saveDir()
+local BACKUP_FN = "/Script/Atlas.AtlasCoreLibrary:BackupSaveGameToSlot"
+local backups = {}           -- slot -> { ticks, secs } (time of the last backup into it)
+
+local function savedDir()
     local base = os.getenv("LOCALAPPDATA")
     if not base or base == "" then return nil end
-    return base .. "\\Atlas\\Saved\\SaveGames\\"
+    return base .. "\\Atlas\\Saved\\"
+end
+
+local function saveDir()
+    local d = savedDir()
+    return d and (d .. "SaveGames\\") or nil
+end
+
+-- Outside the mod folder: the launcher replaces that folder on every install
+local function backupFile()
+    local d = savedDir()
+    return d and (d .. "ReachTweaks_SaveTimes.txt") or nil
 end
 
 -- Plausible FDateTime ticks: years 2000-2200
@@ -93,14 +115,66 @@ local function readTicks(path)
     return nil
 end
 
+local function slotTicks(slot)
+    local dir = saveDir()
+    return dir and readTicks(dir .. SAVE_PREFIX .. tostring(slot) .. ".sav")
+end
+
+-- Days since 1970-01-01 of a calendar date (proleptic Gregorian)
+local function daysFromCivil(y, m, d)
+    if m <= 2 then y = y - 1 end
+    local era = (y >= 0 and y or y - 399) // 400
+    local yoe = y - era * 400
+    local mp = (m + 9) % 12
+    local doy = (153 * mp + 2) // 5 + d - 1
+    local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+end
+
+-- Local wall-clock time as seconds since 1970 read as UTC: the same scale as
+-- the save Timestamp (FDateTime::Now() is local time), formatted with "!"
+local function localNowSecs()
+    local t = os.date("*t")
+    return daysFromCivil(t.year, t.month, t.day) * 86400 + t.hour * 3600 + t.min * 60 + t.sec
+end
+
+local function loadBackups()
+    backups = {}
+    local path = backupFile()
+    local f = path and io.open(path, "r")
+    if not f then return end
+    for line in f:lines() do
+        local s, t, secs = line:match("^(%d+)%s+(%d+)%s+(%-?%d+)")
+        if s then backups[tonumber(s)] = { ticks = math.tointeger(tonumber(t)), secs = math.tointeger(tonumber(secs)) } end
+    end
+    f:close()
+end
+
+local function saveBackups()
+    local path = backupFile()
+    local f = path and io.open(path, "w")
+    if not f then return false end
+    local slots = {}
+    for s in pairs(backups) do slots[#slots + 1] = s end
+    table.sort(slots)
+    for _, s in ipairs(slots) do
+        f:write(string.format("%d %d %d\n", s, backups[s].ticks, backups[s].secs))
+    end
+    f:close()
+    return true
+end
+
 local function slotInfo(slot)
     local c = fileCache[slot]
     if c and nowMs - c.at < FILE_CACHE_MS then return c.info end
     local info = nil
-    local dir = saveDir()
-    local ticks = dir and readTicks(dir .. SAVE_PREFIX .. tostring(slot) .. ".sav")
+    local ticks = slotTicks(slot)
     if ticks then
         local secs = ticks // TICKS_PER_SECOND - UNIX_EPOCH_SECONDS
+        -- A backup copy keeps the Timestamp of its source; the menu shows the
+        -- date of the copy, so the recorded backup time is used instead
+        local b = backups[slot]
+        if b and b.ticks == ticks then secs = b.secs end
         -- The ticks are already local time: "!" formats them without conversion
         local d = os.date("!*t", secs)
         info = { secs = secs, year = d.year, day = d.day }
@@ -304,6 +378,32 @@ function SaveTime.Tick(dtMs)
     for _, w in ipairs(findSlots()) do Util.SafeCall(updateSlot, w) end
 end
 
+-- After BackupSaveGameToSlot: the copy is written by then; its Timestamp is
+-- stored with the time of the backup
+local function recordBackup(slot, secs, tries)
+    local ticks = slotTicks(slot)
+    if not ticks then
+        if tries < 10 then Util.After(500, function() recordBackup(slot, secs, tries + 1) end) end
+        return
+    end
+    backups[slot] = { ticks = ticks, secs = secs }
+    local ok = saveBackups()
+    fileCache[slot] = nil
+    signalAt = nowMs           -- rescan the list if it is shown
+    Util.DLog("[savetime] backup into slot %d at %s%s", slot, os.date("!%Y-%m-%d %H:%M", secs),
+        ok and "" or " (could not write the backup times file)")
+end
+
+local function onBackup(_, slotName)
+    local okn, name = pcall(function() return slotName:get():ToString() end)
+    if not okn or type(name) ~= "string" then return end
+    local slot = tonumber(name:match("^" .. SAVE_PREFIX .. "(%d+)$") or "")
+    Util.DLog("[savetime] BackupSaveGameToSlot('%s')", name)
+    if slot == nil then return end
+    local secs = localNowSecs()
+    Util.After(300, function() recordBackup(slot, secs, 0) end)
+end
+
 -- F7 OFF: give the texts back their original value
 function SaveTime.Stop()
     for path, c in pairs(changed) do
@@ -316,6 +416,11 @@ end
 
 function SaveTime.Init(config)
     cfg = config
+    loadBackups()
+    do
+        local ok, err = pcall(function() RegisterHook(BACKUP_FN, onBackup) end)
+        Util.DLog("[savetime] hook %s: %s", BACKUP_FN, ok and "OK" or tostring(err))
+    end
     -- Native functions called by the slot / page Blueprints (game thread)
     local slotFns = { "GetLevelDisplayName", "GetButtonVisibility", "GetSaveSlotIndex" }
     for _, fn in ipairs(slotFns) do

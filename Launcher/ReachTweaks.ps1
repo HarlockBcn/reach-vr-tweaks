@@ -278,6 +278,9 @@ function Uninstall-All($bin) {
     if (Test-Path $mf) { Remove-Item $mf -Force }
     $saved = Split-Path $SavedGameDirFile
     if (Test-Path -LiteralPath $saved) { Remove-Item -LiteralPath $saved -Recurse -Force }
+    # Backup times recorded by the mod (save time in the save list)
+    $saveTimes = Join-Path $env:LOCALAPPDATA 'Atlas\Saved\ReachTweaks_SaveTimes.txt'
+    if (Test-Path -LiteralPath $saveTimes) { Remove-Item -LiteralPath $saveTimes -Force }
     Ok 'Uninstall complete. Reach is back to its original state.'
 }
 
