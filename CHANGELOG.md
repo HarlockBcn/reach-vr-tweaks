@@ -7,6 +7,8 @@ PATCH for bug fixes and tuning.
 Add new entries under **Unreleased**; `tools/release.ps1` turns that section into the next version.
 
 ## [Unreleased]
+
+## [1.16.0] - 2026-11-15
 ### Added
 - Damage haptics: the game does not vibrate when you are hurt; now the controllers get a kick, stronger with more damage (share of max health) and stronger on the side the hit comes from (`DamageHaptics.*`). Pellet bursts (several hits per frame) add up into one kick that grows with the total damage. With Debug the log shows each hit (`[damagehaptics]`: damage, side and amplitudes).
 
